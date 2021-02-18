@@ -159,8 +159,8 @@ impl FileDb {
         Ok(file_id)
     }
 
-    pub fn display_loc(&self, out: &mut impl fmt::Write, loc: CodeLoc) -> fmt::Result {
-        let file = self.files[loc.file as usize];
+    pub fn display_loc(&self, out: &mut impl fmt::Write, loc: CodeLoc, file: u32) -> fmt::Result {
+        let file = self.files[file as usize];
         let start_line = file.line_index(loc.start as usize).unwrap();
         let end_line = file.line_index(loc.end as usize).unwrap();
 
@@ -171,15 +171,15 @@ impl FileDb {
         return write!(out, "{}", unsafe { str::from_utf8_unchecked(bytes) });
     }
 
-    pub fn write_loc(&self, out: &mut impl fmt::Write, loc: CodeLoc) -> fmt::Result {
-        let file = self.files[loc.file as usize];
+    pub fn write_loc(&self, out: &mut impl fmt::Write, loc: CodeLoc, file: u32) -> fmt::Result {
+        let file = self.files[file as usize];
         let line = file.line_index(loc.start as usize).unwrap() + 1;
         return write!(out, "{}:{}", file.name, line);
     }
 
-    pub fn loc_to_string(&self, loc: CodeLoc) -> String {
+    pub fn loc_to_string(&self, loc: CodeLoc, file: u32) -> String {
         let mut out = StringWriter::new();
-        self.write_loc(&mut out, loc).unwrap();
+        self.write_loc(&mut out, loc, file).unwrap();
         return out.into_string();
     }
 

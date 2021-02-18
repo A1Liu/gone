@@ -1,6 +1,6 @@
 use core::sync::atomic::AtomicUsize;
 use core::{fmt, mem, ops, str};
-use serde::ser::{Serialize, SerializeStruct, Serializer};
+use serde::ser::{Serialize, Serializer};
 
 pub use core::fmt::Write;
 pub use std::boxed::Box;
@@ -110,67 +110,36 @@ pub fn register_output(f: impl Fn(String) + 'static) {
     unsafe { core::ptr::write_volatile(out, Some(mem::transmute(value))) };
 }
 
-pub const NO_FILE: CodeLoc = CodeLoc {
-    start: 0,
-    end: 0,
-    file: !0,
-};
+pub const NO_FILE: usize = !0;
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq)]
 pub struct CodeLoc {
-    pub start: u32, // TODO Top 20 bits for start, bottom 12 bits for length?
-    pub end: u32,
-    pub file: u32,
-}
-
-impl Serialize for CodeLoc {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        if self == &NO_FILE {
-            return serializer.serialize_none();
-        }
-
-        let mut state = serializer.serialize_struct("CodeLoc", 3)?;
-        state.serialize_field("start", &self.start)?;
-        state.serialize_field("end", &self.end)?;
-        state.serialize_field("file", &self.file)?;
-        return state.end();
-    }
+    pub start: usize,
+    pub end: usize,
 }
 
 impl fmt::Debug for CodeLoc {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        write!(fmt, "{}:({},{})", self.file, self.start, self.end)
+        write!(fmt, "({},{})", self.start, self.end)
     }
 }
 
 #[inline]
-pub fn l(start: u32, end: u32, file: u32) -> CodeLoc {
+pub fn l(start: usize, end: usize) -> CodeLoc {
     debug_assert!(start <= end);
 
-    CodeLoc { start, end, file }
+    CodeLoc { start, end }
 }
 
 impl Into<ops::Range<usize>> for CodeLoc {
     fn into(self) -> ops::Range<usize> {
-        (self.start as usize)..(self.end as usize)
+        self.start..self.end
     }
 }
 
 #[inline]
 pub fn l_from(loc1: CodeLoc, loc2: CodeLoc) -> CodeLoc {
-    if loc1 == NO_FILE {
-        return loc2;
-    }
-
-    if loc2 == NO_FILE {
-        return loc1;
-    }
-
-    debug_assert_eq!(loc1.file, loc2.file);
-    l(loc1.start, loc2.end, loc1.file)
+    l(loc1.start, loc2.end)
 }
 
 pub fn align_usize(size: usize, align: usize) -> usize {
