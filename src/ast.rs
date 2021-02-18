@@ -38,8 +38,8 @@ pub enum UnaryOp {
 
 #[derive(Debug, Clone, Copy)]
 pub enum ExprKind<'a> {
-    Number(u64),
-    // DoubleLit(f64),
+    U64(u64),
+    S64(i64),
     StringLit(&'a str),
     Ident(u32),
     BinOp(BinOp, &'a Expr<'a>, &'a Expr<'a>),
@@ -66,14 +66,37 @@ pub struct Expr<'a> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct Decl<'a> {
-    pub ident: u32,
-    pub expr: Expr<'a>,
+pub enum TypeModifier {
+    Pointer,
+    Array(u64),
+    VariableArray,
+    Slice,
+    Varargs,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct Block<'a> {
-    pub stmts: &'a [Statement<'a>],
+pub enum TypeBase<'a> {
+    Any,
+    S64,
+    U64,
+    Named(u32),
+    Function {
+        ret: &'a Type<'a>,
+        params: &'a [Type<'a>],
+    },
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Type<'a> {
+    pub modifiers: &'a [TypeModifier],
+    pub base: TypeBase<'a>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Decl<'a> {
+    pub ident: u32,
+    pub ty: Option<Type<'a>>,
+    pub expr: Expr<'a>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -86,24 +109,24 @@ pub enum StatementKind<'a> {
         if_body: &'a Statement<'a>,
         else_body: Option<&'a Statement<'a>>,
     },
-    Block(Block<'a>),
-    ForDecl {
-        decl: Decl<'a>,
-        condition: Option<Expr<'a>>,
-        post_expr: Option<Expr<'a>>,
-        body: &'a Statement<'a>,
+    Block(&'a [Statement<'a>]),
+    For {
+        iter: u32,
+        by_pointer: Expr<'a>,
+        source: Expr<'a>,
     },
     While {
-        condition: Expr<'a>,
+        condition: Option<Expr<'a>>,
         body: &'a Statement<'a>,
     },
-    DoWhile {
-        condition: Expr<'a>,
-        body: &'a Statement<'a>,
+    Assign {
+        ident: u32,
+        value: Expr<'a>,
     },
-    Switch {
-        expr: Expr<'a>,
-        body: &'a Statement<'a>,
+    MutAssign {
+        ident: u32,
+        op: BinOp,
+        value: Expr<'a>,
     },
     Break,
     Continue,

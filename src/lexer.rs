@@ -6,22 +6,26 @@ use core::marker::PhantomData;
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum TokenKind<'a> {
     Ident(u32),
-    Number(u64),
+    U64Lit(u64),
     StringLit(&'a IStr),
     CharLit([u8; 4]),
     Error(&'a IStr),
 
     Struct,
+    U64,
+    S64,
+    Any,
 
     If,
     Else,
     For,
+    While,
     Break,
     Continue,
     Return,
 
     Dot,
-    DotDotDot,
+    DotDot,
     Arrow,
     Bang,
     Question,
@@ -102,11 +106,16 @@ lazy_static! {
 
         set.insert("break", TokenKind::Break);
         set.insert("continue", TokenKind::Continue);
-        set.insert("else", TokenKind::Else);
         set.insert("for", TokenKind::For);
+        set.insert("while", TokenKind::While);
         set.insert("if", TokenKind::If);
+        set.insert("else", TokenKind::Else);
         set.insert("return", TokenKind::Return);
+
         set.insert("struct", TokenKind::Struct);
+        set.insert("u64", TokenKind::U64);
+        set.insert("s64", TokenKind::S64);
+        set.insert("any", TokenKind::Any);
 
         set
     };
@@ -231,7 +240,7 @@ impl<'input, 'lexer, 'output> Iterator for Lexing<'input, 'lexer, 'output> {
                     self.current += 1;
                 }
 
-                ret!(TokenKind::Number(num));
+                ret!(TokenKind::U64Lit(num));
             }
 
             b'\"' => {
@@ -262,12 +271,7 @@ impl<'input, 'lexer, 'output> Iterator for Lexing<'input, 'lexer, 'output> {
 
             b'.' => {
                 if self.peek_eq(b'.') {
-                    self.current += 1;
-                    if self.peek_eq(b'.') {
-                        incr_ret!(TokenKind::DotDotDot);
-                    }
-
-                    err_ret!("'..' is not a valid token. Maybe '...' is what you meant?");
+                    incr_ret!(TokenKind::DotDot);
                 }
 
                 ret!(TokenKind::Dot);

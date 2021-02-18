@@ -294,11 +294,7 @@ impl Drop for Symbols {
 #[repr(u32)]
 pub enum BuiltinSymbol {
     Main = 0,
-
-    MacroDefined,
-
-    BuiltinPush,
-    BuiltinOp,
+    It,
 }
 
 impl Symbols {
@@ -311,10 +307,7 @@ impl Symbols {
 
         new_self.add_str("main");
 
-        new_self.add_str("defined");
-
-        new_self.add_str("__tci_builtin_push");
-        new_self.add_str("__tci_builtin_op");
+        new_self.add_str("it");
 
         new_self
     }
