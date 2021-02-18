@@ -4,6 +4,7 @@
 
 extern crate alloc;
 
+mod ast;
 mod buckets;
 mod filedb;
 mod lexer;
