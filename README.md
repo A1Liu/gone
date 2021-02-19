@@ -48,12 +48,13 @@ the philosophy of the compiler should be to optimize first and foremost for:
 
 ## Implementation Problems
 - How do we make garbage collection behave at runtime like manual memory management?
-  - Objects typically lies in a few patterns
+  - Objects typically lie in a few patterns
     - Arrays
     - Trees
     - Graphs
 
-    Ideally, we'd support all of them, but that's probably a bit too hard.
+    Ideally, we'd support good garbage collection for all of them, but that's
+    probably a bit too hard.
 
 - How do we do lifetime analysis, especially for recursive functions, without annotations?
 - How do we handle types at compile time?

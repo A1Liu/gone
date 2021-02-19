@@ -1,19 +1,22 @@
 use crate::util::*;
+use core::num::NonZeroU32;
 
 #[derive(Debug, Clone, Copy)]
-pub struct StrIdx(u32);
+pub struct StrIdx(NonZeroU32);
 #[derive(Debug, Clone, Copy)]
-pub struct ParamIdx(u32);
+pub struct ParamIdx(NonZeroU32);
 #[derive(Debug, Clone, Copy)]
-pub struct IdentIdx(u32);
+pub struct IdentIdx(NonZeroU32);
 #[derive(Debug, Clone, Copy)]
-pub struct ExprIdx(u32);
+pub struct ExprIdx(NonZeroU32);
 #[derive(Debug, Clone, Copy)]
-pub struct StmtIdx(u32);
+pub struct StmtIdx(NonZeroU32);
 #[derive(Debug, Clone, Copy)]
-pub struct TypeModIdx(u32);
+pub struct TypeModIdx(NonZeroU32);
 #[derive(Debug, Clone, Copy)]
-pub struct TypeIdx(u32);
+pub struct TypeIdx(NonZeroU32);
+
+static_assertions::assert_eq_size!(TypeModIdx, Option<TypeModIdx>);
 
 pub struct Ast {
     pub file: u32,
@@ -27,8 +30,14 @@ pub struct Ast {
     pub globals: Range<StmtIdx>,
 }
 
+fn w(i: u32) -> NonZeroU32 {
+    return NonZeroU32::new(i).unwrap();
+}
+
 impl Ast {
     pub fn new(file: u32) -> Self {
+        let idx = StmtIdx(w(!0));
+
         Self {
             file,
             strings: StringArray::new(),
@@ -38,62 +47,62 @@ impl Ast {
             stmts: Vec::new(),
             ty_mods: Vec::new(),
             tys: Vec::new(),
-            globals: r(StmtIdx(0), StmtIdx(0)),
+            globals: r(idx, idx),
         }
     }
 
     pub fn add_str(&mut self, string: String) -> StrIdx {
-        let idx = self.strings.len() as u32;
+        let idx = w(!self.strings.len() as u32);
         self.strings.push((), &string);
         return StrIdx(idx);
     }
 
     pub fn add_expr(&mut self, expr: Expr) -> ExprIdx {
-        let idx = self.exprs.len() as u32;
+        let idx = w(!self.exprs.len() as u32);
         self.exprs.push(expr);
         return ExprIdx(idx);
     }
 
     pub fn add_stmt(&mut self, stmt: Stmt) -> StmtIdx {
-        let idx = self.stmts.len() as u32;
+        let idx = w(!self.stmts.len() as u32);
         self.stmts.push(stmt);
         return StmtIdx(idx);
     }
 
     pub fn add_ty(&mut self, ty: Type) -> TypeIdx {
-        let idx = self.tys.len() as u32;
+        let idx = w(!self.tys.len() as u32);
         self.tys.push(ty);
         return TypeIdx(idx);
     }
 
     pub fn add_stmts(&mut self, mut stmts: Vec<Stmt>) -> Range<StmtIdx> {
-        let begin = StmtIdx(self.stmts.len() as u32);
+        let begin = StmtIdx(w(!self.stmts.len() as u32));
         self.stmts.append(&mut stmts);
-        return r(begin, StmtIdx(self.stmts.len() as u32));
+        return r(begin, StmtIdx(w(!self.stmts.len() as u32)));
     }
 
     pub fn add_exprs(&mut self, mut exprs: Vec<Expr>) -> Range<ExprIdx> {
-        let begin = ExprIdx(self.exprs.len() as u32);
+        let begin = ExprIdx(w(!self.exprs.len() as u32));
         self.exprs.append(&mut exprs);
-        return r(begin, ExprIdx(self.exprs.len() as u32));
+        return r(begin, ExprIdx(w(!self.exprs.len() as u32)));
     }
 
     pub fn add_idents(&mut self, mut idents: Vec<u32>) -> Range<IdentIdx> {
-        let begin = IdentIdx(self.idents.len() as u32);
+        let begin = IdentIdx(w(!self.idents.len() as u32));
         self.idents.append(&mut idents);
-        return r(begin, IdentIdx(self.idents.len() as u32));
+        return r(begin, IdentIdx(w(!self.idents.len() as u32)));
     }
 
     pub fn add_ty_mods(&mut self, mut ty_mods: Vec<TypeModifier>) -> Range<TypeModIdx> {
-        let begin = TypeModIdx(self.ty_mods.len() as u32);
+        let begin = TypeModIdx(w(!self.ty_mods.len() as u32));
         self.ty_mods.append(&mut ty_mods);
-        return r(begin, TypeModIdx(self.ty_mods.len() as u32));
+        return r(begin, TypeModIdx(w(!self.ty_mods.len() as u32)));
     }
 
     pub fn add_params(&mut self, mut params: Vec<(Decl, CodeLoc)>) -> Range<ParamIdx> {
-        let begin = ParamIdx(self.params.len() as u32);
+        let begin = ParamIdx(w(!self.params.len() as u32));
         self.params.append(&mut params);
-        return r(begin, ParamIdx(self.params.len() as u32));
+        return r(begin, ParamIdx(w(!self.params.len() as u32)));
     }
 }
 
@@ -219,7 +228,16 @@ pub enum ExprKind {
 #[derive(Debug, Clone, Copy)]
 pub struct Expr {
     pub kind: ExprKind,
+    pub ty: Option<TypeIdx>,
     pub loc: CodeLoc,
+}
+
+pub fn e(kind: ExprKind, loc: CodeLoc) -> Expr {
+    return Expr {
+        kind,
+        ty: None,
+        loc,
+    };
 }
 
 #[derive(Debug, Clone, Copy)]

@@ -63,13 +63,12 @@ impl<'data> Parser<'data> {
 
                 let body = self.parse_stmt()?;
 
+                let iter = e(ExprKind::Ident(BuiltinSymbol::It as u32), first.loc);
+
                 return Ok(Stmt {
                     loc: l_from(start, body.loc),
                     kind: StmtKind::For {
-                        iter: self.ast.add_expr(Expr {
-                            kind: ExprKind::Ident(BuiltinSymbol::It as u32),
-                            loc: first.loc,
-                        }),
+                        iter: self.ast.add_expr(iter),
                         source: self.ast.add_expr(first),
                         body: self.ast.add_stmt(body),
                     },
@@ -240,10 +239,7 @@ impl<'data> Parser<'data> {
                 let right = self.parse_assign()?;
                 let loc = l_from(left.loc, right.loc);
                 let (right, left) = (self.ast.add_expr(right), self.ast.add_expr(left));
-                return Ok(Expr {
-                    loc,
-                    kind: ExprKind::Assign(left, right),
-                });
+                return Ok(e(ExprKind::Assign(left, right), loc));
             }
             TokenKind::PlusEq => {
                 self.pop().unwrap();
@@ -251,14 +247,14 @@ impl<'data> Parser<'data> {
                 let right = self.parse_assign()?;
                 let loc = l_from(left.loc, right.loc);
                 let (right, left) = (self.ast.add_expr(right), self.ast.add_expr(left));
-                return Ok(Expr {
-                    loc,
-                    kind: ExprKind::MutAssign {
-                        target: left,
-                        value: right,
-                        op: BinOp::Add,
-                    },
-                });
+
+                let kind = ExprKind::MutAssign {
+                    target: left,
+                    value: right,
+                    op: BinOp::Add,
+                };
+
+                return Ok(e(kind, loc));
             }
             TokenKind::DashEq => {
                 self.pop().unwrap();
@@ -266,14 +262,13 @@ impl<'data> Parser<'data> {
                 let right = self.parse_assign()?;
                 let loc = l_from(left.loc, right.loc);
                 let (right, left) = (self.ast.add_expr(right), self.ast.add_expr(left));
-                return Ok(Expr {
-                    loc,
-                    kind: ExprKind::MutAssign {
-                        target: left,
-                        value: right,
-                        op: BinOp::Sub,
-                    },
-                });
+                let kind = ExprKind::MutAssign {
+                    target: left,
+                    value: right,
+                    op: BinOp::Sub,
+                };
+
+                return Ok(e(kind, loc));
             }
             TokenKind::StarEq => {
                 self.pop().unwrap();
@@ -281,14 +276,13 @@ impl<'data> Parser<'data> {
                 let right = self.parse_assign()?;
                 let loc = l_from(left.loc, right.loc);
                 let (right, left) = (self.ast.add_expr(right), self.ast.add_expr(left));
-                return Ok(Expr {
-                    loc,
-                    kind: ExprKind::MutAssign {
-                        target: left,
-                        value: right,
-                        op: BinOp::Mul,
-                    },
-                });
+                let kind = ExprKind::MutAssign {
+                    target: left,
+                    value: right,
+                    op: BinOp::Mul,
+                };
+
+                return Ok(e(kind, loc));
             }
             TokenKind::SlashEq => {
                 self.pop().unwrap();
@@ -296,28 +290,25 @@ impl<'data> Parser<'data> {
                 let right = self.parse_assign()?;
                 let loc = l_from(left.loc, right.loc);
                 let (right, left) = (self.ast.add_expr(right), self.ast.add_expr(left));
-                return Ok(Expr {
-                    loc,
-                    kind: ExprKind::MutAssign {
-                        target: left,
-                        value: right,
-                        op: BinOp::Div,
-                    },
-                });
+                let kind = ExprKind::MutAssign {
+                    target: left,
+                    value: right,
+                    op: BinOp::Div,
+                };
+
+                return Ok(e(kind, loc));
             }
             TokenKind::PercentEq => {
                 self.pop().unwrap();
                 let right = self.parse_assign()?;
                 let loc = l_from(left.loc, right.loc);
                 let (right, left) = (self.ast.add_expr(right), self.ast.add_expr(left));
-                return Ok(Expr {
-                    loc,
-                    kind: ExprKind::MutAssign {
-                        target: left,
-                        value: right,
-                        op: BinOp::Mod,
-                    },
-                });
+                let kind = ExprKind::MutAssign {
+                    target: left,
+                    value: right,
+                    op: BinOp::Mod,
+                };
+                return Ok(e(kind, loc));
             }
             TokenKind::LtLtEq => {
                 self.pop().unwrap();
@@ -325,43 +316,42 @@ impl<'data> Parser<'data> {
                 let right = self.parse_assign()?;
                 let loc = l_from(left.loc, right.loc);
                 let (right, left) = (self.ast.add_expr(right), self.ast.add_expr(left));
-                return Ok(Expr {
-                    loc,
-                    kind: ExprKind::MutAssign {
-                        target: left,
-                        value: right,
-                        op: BinOp::LShift,
-                    },
-                });
+                let kind = ExprKind::MutAssign {
+                    target: left,
+                    value: right,
+                    op: BinOp::LShift,
+                };
+
+                return Ok(e(kind, loc));
             }
+
             TokenKind::GtGtEq => {
                 self.pop().unwrap();
                 let right = self.parse_assign()?;
                 let loc = l_from(left.loc, right.loc);
                 let (right, left) = (self.ast.add_expr(right), self.ast.add_expr(left));
-                return Ok(Expr {
-                    loc,
-                    kind: ExprKind::MutAssign {
-                        target: left,
-                        value: right,
-                        op: BinOp::RShift,
-                    },
-                });
+                let kind = ExprKind::MutAssign {
+                    target: left,
+                    value: right,
+                    op: BinOp::RShift,
+                };
+
+                return Ok(e(kind, loc));
             }
+
             TokenKind::AmpEq => {
                 self.pop().unwrap();
                 self.eat_newline();
                 let right = self.parse_assign()?;
                 let loc = l_from(left.loc, right.loc);
                 let (right, left) = (self.ast.add_expr(right), self.ast.add_expr(left));
-                return Ok(Expr {
-                    loc,
-                    kind: ExprKind::MutAssign {
-                        target: left,
-                        value: right,
-                        op: BinOp::BitAnd,
-                    },
-                });
+                let kind = ExprKind::MutAssign {
+                    target: left,
+                    value: right,
+                    op: BinOp::BitAnd,
+                };
+
+                return Ok(e(kind, loc));
             }
             TokenKind::CaretEq => {
                 self.pop().unwrap();
@@ -369,14 +359,13 @@ impl<'data> Parser<'data> {
                 let right = self.parse_assign()?;
                 let loc = l_from(left.loc, right.loc);
                 let (right, left) = (self.ast.add_expr(right), self.ast.add_expr(left));
-                return Ok(Expr {
-                    loc,
-                    kind: ExprKind::MutAssign {
-                        target: left,
-                        value: right,
-                        op: BinOp::BitXor,
-                    },
-                });
+                let kind = ExprKind::MutAssign {
+                    target: left,
+                    value: right,
+                    op: BinOp::BitXor,
+                };
+
+                return Ok(e(kind, loc));
             }
             TokenKind::LineEq => {
                 self.pop().unwrap();
@@ -384,14 +373,13 @@ impl<'data> Parser<'data> {
                 let right = self.parse_assign()?;
                 let loc = l_from(left.loc, right.loc);
                 let (right, left) = (self.ast.add_expr(right), self.ast.add_expr(left));
-                return Ok(Expr {
-                    loc,
-                    kind: ExprKind::MutAssign {
-                        target: left,
-                        value: right,
-                        op: BinOp::BitOr,
-                    },
-                });
+                let kind = ExprKind::MutAssign {
+                    target: left,
+                    value: right,
+                    op: BinOp::BitOr,
+                };
+
+                return Ok(e(kind, loc));
             }
             _ => {
                 return Ok(left);
@@ -433,14 +421,13 @@ impl<'data> Parser<'data> {
         let if_true = self.ast.add_expr(if_true);
         let if_false = self.ast.add_expr(if_false);
 
-        return Ok(Expr {
-            loc,
-            kind: ExprKind::Ternary {
-                condition,
-                if_true,
-                if_false,
-            },
-        });
+        let kind = ExprKind::Ternary {
+            condition,
+            if_true,
+            if_false,
+        };
+
+        return Ok(e(kind, loc));
     }
 
     pub fn parse_bool_or(&mut self) -> Result<Expr, Error> {
@@ -457,10 +444,8 @@ impl<'data> Parser<'data> {
                     let left = self.ast.add_expr(expr);
                     let right = self.ast.add_expr(right);
 
-                    expr = Expr {
-                        kind: ExprKind::BinOp(BinOp::BoolOr, left, right),
-                        loc: l_from(start_loc, end_loc),
-                    };
+                    let kind = ExprKind::BinOp(BinOp::BoolOr, left, right);
+                    expr = e(kind, l_from(start_loc, end_loc));
                 }
                 _ => return Ok(expr),
             }
@@ -483,10 +468,8 @@ impl<'data> Parser<'data> {
                     let left = self.ast.add_expr(expr);
                     let right = self.ast.add_expr(right);
 
-                    expr = Expr {
-                        kind: ExprKind::BinOp(BinOp::BoolAnd, left, right),
-                        loc: l_from(start_loc, end_loc),
-                    };
+                    let kind = ExprKind::BinOp(BinOp::BoolAnd, left, right);
+                    expr = e(kind, l_from(start_loc, end_loc));
                 }
                 _ => return Ok(expr),
             }
@@ -509,10 +492,8 @@ impl<'data> Parser<'data> {
                     let left = self.ast.add_expr(expr);
                     let right = self.ast.add_expr(right);
 
-                    expr = Expr {
-                        kind: ExprKind::BinOp(BinOp::BitOr, left, right),
-                        loc: l_from(start_loc, end_loc),
-                    };
+                    let kind = ExprKind::BinOp(BinOp::BitOr, left, right);
+                    expr = e(kind, l_from(start_loc, end_loc));
                 }
                 _ => return Ok(expr),
             }
@@ -535,10 +516,8 @@ impl<'data> Parser<'data> {
                     let left = self.ast.add_expr(expr);
                     let right = self.ast.add_expr(right);
 
-                    expr = Expr {
-                        kind: ExprKind::BinOp(BinOp::BitXor, left, right),
-                        loc: l_from(start_loc, end_loc),
-                    };
+                    let kind = ExprKind::BinOp(BinOp::BitXor, left, right);
+                    expr = e(kind, l_from(start_loc, end_loc));
                 }
                 _ => return Ok(expr),
             }
@@ -561,10 +540,8 @@ impl<'data> Parser<'data> {
                     let left = self.ast.add_expr(expr);
                     let right = self.ast.add_expr(right);
 
-                    expr = Expr {
-                        kind: ExprKind::BinOp(BinOp::BitAnd, left, right),
-                        loc: l_from(start_loc, end_loc),
-                    };
+                    let kind = ExprKind::BinOp(BinOp::BitAnd, left, right);
+                    expr = e(kind, l_from(start_loc, end_loc));
                 }
                 _ => return Ok(expr),
             }
@@ -587,10 +564,8 @@ impl<'data> Parser<'data> {
                     let left = self.ast.add_expr(expr);
                     let right = self.ast.add_expr(right);
 
-                    expr = Expr {
-                        kind: ExprKind::BinOp(BinOp::Eq, left, right),
-                        loc: l_from(start_loc, end_loc),
-                    };
+                    let kind = ExprKind::BinOp(BinOp::Eq, left, right);
+                    expr = e(kind, l_from(start_loc, end_loc));
                 }
                 TokenKind::Neq => {
                     self.pop().unwrap();
@@ -601,10 +576,8 @@ impl<'data> Parser<'data> {
                     let left = self.ast.add_expr(expr);
                     let right = self.ast.add_expr(right);
 
-                    expr = Expr {
-                        kind: ExprKind::BinOp(BinOp::Neq, left, right),
-                        loc: l_from(start_loc, end_loc),
-                    };
+                    let kind = ExprKind::BinOp(BinOp::Neq, left, right);
+                    expr = e(kind, l_from(start_loc, end_loc));
                 }
                 _ => return Ok(expr),
             }
@@ -628,10 +601,8 @@ impl<'data> Parser<'data> {
                     let left = self.ast.add_expr(expr);
                     let right = self.ast.add_expr(right);
 
-                    expr = Expr {
-                        kind: ExprKind::BinOp(BinOp::Lt, left, right),
-                        loc: l_from(start_loc, end_loc),
-                    };
+                    let kind = ExprKind::BinOp(BinOp::Lt, left, right);
+                    expr = e(kind, l_from(start_loc, end_loc));
                 }
                 TokenKind::Leq => {
                     self.pop().unwrap();
@@ -641,10 +612,8 @@ impl<'data> Parser<'data> {
                     let left = self.ast.add_expr(expr);
                     let right = self.ast.add_expr(right);
 
-                    expr = Expr {
-                        kind: ExprKind::BinOp(BinOp::Leq, left, right),
-                        loc: l_from(start_loc, end_loc),
-                    };
+                    let kind = ExprKind::BinOp(BinOp::Leq, left, right);
+                    expr = e(kind, l_from(start_loc, end_loc));
                 }
                 TokenKind::Gt => {
                     self.pop().unwrap();
@@ -655,10 +624,8 @@ impl<'data> Parser<'data> {
                     let left = self.ast.add_expr(expr);
                     let right = self.ast.add_expr(right);
 
-                    expr = Expr {
-                        kind: ExprKind::BinOp(BinOp::Gt, left, right),
-                        loc: l_from(start_loc, end_loc),
-                    };
+                    let kind = ExprKind::BinOp(BinOp::Gt, left, right);
+                    expr = e(kind, l_from(start_loc, end_loc));
                 }
                 TokenKind::Geq => {
                     self.pop().unwrap();
@@ -669,10 +636,8 @@ impl<'data> Parser<'data> {
                     let left = self.ast.add_expr(expr);
                     let right = self.ast.add_expr(right);
 
-                    expr = Expr {
-                        kind: ExprKind::BinOp(BinOp::Geq, left, right),
-                        loc: l_from(start_loc, end_loc),
-                    };
+                    let kind = ExprKind::BinOp(BinOp::Geq, left, right);
+                    expr = e(kind, l_from(start_loc, end_loc));
                 }
                 _ => return Ok(expr),
             }
@@ -695,10 +660,8 @@ impl<'data> Parser<'data> {
                     let left = self.ast.add_expr(expr);
                     let right = self.ast.add_expr(right);
 
-                    expr = Expr {
-                        kind: ExprKind::BinOp(BinOp::RShift, left, right),
-                        loc: l_from(start_loc, end_loc),
-                    };
+                    let kind = ExprKind::BinOp(BinOp::RShift, left, right);
+                    expr = e(kind, l_from(start_loc, end_loc));
                 }
                 TokenKind::LtLt => {
                     self.pop().unwrap();
@@ -709,10 +672,8 @@ impl<'data> Parser<'data> {
                     let left = self.ast.add_expr(expr);
                     let right = self.ast.add_expr(right);
 
-                    expr = Expr {
-                        kind: ExprKind::BinOp(BinOp::LShift, left, right),
-                        loc: l_from(start_loc, end_loc),
-                    };
+                    let kind = ExprKind::BinOp(BinOp::LShift, left, right);
+                    expr = e(kind, l_from(start_loc, end_loc));
                 }
                 _ => return Ok(expr),
             }
@@ -736,10 +697,8 @@ impl<'data> Parser<'data> {
                     let left = self.ast.add_expr(expr);
                     let right = self.ast.add_expr(right);
 
-                    expr = Expr {
-                        kind: ExprKind::BinOp(BinOp::Add, left, right),
-                        loc: l_from(start_loc, end_loc),
-                    };
+                    let kind = ExprKind::BinOp(BinOp::Add, left, right);
+                    expr = e(kind, l_from(start_loc, end_loc));
                 }
                 TokenKind::Dash => {
                     self.pop().unwrap();
@@ -750,10 +709,8 @@ impl<'data> Parser<'data> {
                     let left = self.ast.add_expr(expr);
                     let right = self.ast.add_expr(right);
 
-                    expr = Expr {
-                        kind: ExprKind::BinOp(BinOp::Sub, left, right),
-                        loc: l_from(start_loc, end_loc),
-                    };
+                    let kind = ExprKind::BinOp(BinOp::Sub, left, right);
+                    expr = e(kind, l_from(start_loc, end_loc));
                 }
                 _ => return Ok(expr),
             }
@@ -777,10 +734,8 @@ impl<'data> Parser<'data> {
                     let left = self.ast.add_expr(expr);
                     let right = self.ast.add_expr(right);
 
-                    expr = Expr {
-                        kind: ExprKind::BinOp(BinOp::Div, left, right),
-                        loc: l_from(start_loc, end_loc),
-                    };
+                    let kind = ExprKind::BinOp(BinOp::Div, left, right);
+                    expr = e(kind, l_from(start_loc, end_loc));
                 }
                 TokenKind::Star => {
                     self.pop().unwrap();
@@ -791,10 +746,8 @@ impl<'data> Parser<'data> {
                     let left = self.ast.add_expr(expr);
                     let right = self.ast.add_expr(right);
 
-                    expr = Expr {
-                        kind: ExprKind::BinOp(BinOp::Mul, left, right),
-                        loc: l_from(start_loc, end_loc),
-                    };
+                    let kind = ExprKind::BinOp(BinOp::Mul, left, right);
+                    expr = e(kind, l_from(start_loc, end_loc));
                 }
                 TokenKind::Percent => {
                     self.pop().unwrap();
@@ -805,10 +758,8 @@ impl<'data> Parser<'data> {
                     let left = self.ast.add_expr(expr);
                     let right = self.ast.add_expr(right);
 
-                    expr = Expr {
-                        kind: ExprKind::BinOp(BinOp::Mod, left, right),
-                        loc: l_from(start_loc, end_loc),
-                    };
+                    let kind = ExprKind::BinOp(BinOp::Mod, left, right);
+                    expr = e(kind, l_from(start_loc, end_loc));
                 }
                 _ => return Ok(expr),
             }
@@ -826,10 +777,7 @@ impl<'data> Parser<'data> {
 
                 let target = self.parse_prefix()?;
                 let (loc, target) = (l_from(tok.loc, target.loc), self.ast.add_expr(target));
-                return Ok(Expr {
-                    loc,
-                    kind: ExprKind::UnaryOp(UnaryOp::Ref, target),
-                });
+                return Ok(e(ExprKind::UnaryOp(UnaryOp::Ref, target), loc));
             }
             TokenKind::Star => {
                 self.pop().unwrap();
@@ -837,10 +785,7 @@ impl<'data> Parser<'data> {
 
                 let target = self.parse_prefix()?;
                 let (loc, target) = (l_from(tok.loc, target.loc), self.ast.add_expr(target));
-                return Ok(Expr {
-                    loc,
-                    kind: ExprKind::UnaryOp(UnaryOp::Deref, target),
-                });
+                return Ok(e(ExprKind::UnaryOp(UnaryOp::Deref, target), loc));
             }
 
             TokenKind::Bang => {
@@ -849,10 +794,7 @@ impl<'data> Parser<'data> {
 
                 let target = self.parse_prefix()?;
                 let (loc, target) = (l_from(tok.loc, target.loc), self.ast.add_expr(target));
-                return Ok(Expr {
-                    loc,
-                    kind: ExprKind::UnaryOp(UnaryOp::BoolNot, target),
-                });
+                return Ok(e(ExprKind::UnaryOp(UnaryOp::BoolNot, target), loc));
             }
             TokenKind::Tilde => {
                 self.pop().unwrap();
@@ -860,10 +802,7 @@ impl<'data> Parser<'data> {
 
                 let target = self.parse_prefix()?;
                 let (loc, target) = (l_from(tok.loc, target.loc), self.ast.add_expr(target));
-                return Ok(Expr {
-                    loc,
-                    kind: ExprKind::UnaryOp(UnaryOp::BitNot, target),
-                });
+                return Ok(e(ExprKind::UnaryOp(UnaryOp::BitNot, target), loc));
             }
             TokenKind::Dash => {
                 self.pop().unwrap();
@@ -871,10 +810,7 @@ impl<'data> Parser<'data> {
 
                 let target = self.parse_prefix()?;
                 let (loc, target) = (l_from(tok.loc, target.loc), self.ast.add_expr(target));
-                return Ok(Expr {
-                    loc,
-                    kind: ExprKind::UnaryOp(UnaryOp::Neg, target),
-                });
+                return Ok(e(ExprKind::UnaryOp(UnaryOp::Neg, target), loc));
             }
 
             _ => return self.parse_range(),
@@ -899,8 +835,7 @@ impl<'data> Parser<'data> {
         let loc = l_from(start.loc, end.loc);
         let (start, end) = (self.ast.add_expr(start), self.ast.add_expr(end));
 
-        #[rustfmt::skip]
-        let range = Expr { loc, kind: ExprKind::Range(Some(start), Some(end)), };
+        let range = e(ExprKind::Range(Some(start), Some(end)), loc);
 
         let tok = match self.peek() {
             Some(tok) => tok,
@@ -951,25 +886,20 @@ impl<'data> Parser<'data> {
 
                     let end_loc = self.pop().unwrap().loc;
                     let params = self.ast.add_exprs(params);
-                    operand = Expr {
-                        loc: l_from(start_loc, end_loc),
-                        kind: ExprKind::Call {
-                            function: self.ast.add_expr(operand),
-                            params,
-                        },
+
+                    let kind = ExprKind::Call {
+                        function: self.ast.add_expr(operand),
+                        params,
                     };
+                    operand = e(kind, l_from(start_loc, end_loc));
                 }
                 TokenKind::PlusPlus => {
-                    operand = Expr {
-                        kind: ExprKind::UnaryOp(UnaryOp::PostIncr, self.ast.add_expr(operand)),
-                        loc: l_from(start_loc, self.pop().unwrap().loc),
-                    };
+                    let kind = ExprKind::UnaryOp(UnaryOp::PostIncr, self.ast.add_expr(operand));
+                    operand = e(kind, l_from(start_loc, self.pop().unwrap().loc));
                 }
                 TokenKind::DashDash => {
-                    operand = Expr {
-                        kind: ExprKind::UnaryOp(UnaryOp::PostDecr, self.ast.add_expr(operand)),
-                        loc: l_from(start_loc, self.pop_err()?.loc),
-                    };
+                    let kind = ExprKind::UnaryOp(UnaryOp::PostDecr, self.ast.add_expr(operand));
+                    operand = e(kind, l_from(start_loc, self.pop().unwrap().loc));
                 }
                 TokenKind::LBracket => {
                     let lbracket = self.pop().unwrap();
@@ -981,14 +911,12 @@ impl<'data> Parser<'data> {
 
                     let loc = l_from(start_loc, rbracket.loc);
 
-                    operand = Expr {
-                        kind: ExprKind::BinOp(
-                            BinOp::Index,
-                            self.ast.add_expr(operand),
-                            self.ast.add_expr(index),
-                        ),
-                        loc,
-                    };
+                    let kind = ExprKind::BinOp(
+                        BinOp::Index,
+                        self.ast.add_expr(operand),
+                        self.ast.add_expr(index),
+                    );
+                    operand = e(kind, loc);
                 }
                 TokenKind::Dot => {
                     self.pop().unwrap();
@@ -996,13 +924,11 @@ impl<'data> Parser<'data> {
 
                     let ident_tok = self.pop_err()?;
                     if let TokenKind::Ident(member) = ident_tok.kind {
-                        operand = Expr {
-                            kind: ExprKind::Member {
-                                base: self.ast.add_expr(operand),
-                                member,
-                            },
-                            loc: l_from(start_loc, ident_tok.loc),
+                        let kind = ExprKind::Member {
+                            base: self.ast.add_expr(operand),
+                            member,
                         };
+                        operand = e(kind, l_from(start_loc, ident_tok.loc));
 
                         continue;
                     }
@@ -1020,22 +946,13 @@ impl<'data> Parser<'data> {
         let tok = self.pop_err()?;
         match tok.kind {
             TokenKind::Null => {
-                return Ok(Expr {
-                    kind: ExprKind::Null,
-                    loc: tok.loc,
-                });
+                return Ok(e(ExprKind::Null, tok.loc));
             }
             TokenKind::Ident(i) => {
-                return Ok(Expr {
-                    kind: ExprKind::Ident(i),
-                    loc: tok.loc,
-                });
+                return Ok(e(ExprKind::Ident(i), tok.loc));
             }
             TokenKind::UxLit(num) => {
-                return Ok(Expr {
-                    kind: ExprKind::Ux(num),
-                    loc: tok.loc,
-                });
+                return Ok(e(ExprKind::Ux(num), tok.loc));
             }
             TokenKind::StringLit(string) => {
                 let mut string = string.as_str().to_string();
@@ -1047,19 +964,14 @@ impl<'data> Parser<'data> {
                     self.eat_newline();
                 }
 
-                return Ok(Expr {
-                    kind: ExprKind::StringLit(self.ast.add_str(string)),
-                    loc: l_from(tok.loc, end_loc),
-                });
+                let kind = ExprKind::StringLit(self.ast.add_str(string));
+                return Ok(e(kind, l_from(tok.loc, end_loc)));
             }
             TokenKind::New => {
                 self.eat_newline();
                 let ty = self.parse_type()?;
                 let (loc, ty) = (l_from(tok.loc, ty.loc), self.ast.add_ty(ty));
-                return Ok(Expr {
-                    kind: ExprKind::New(ty),
-                    loc,
-                });
+                return Ok(e(ExprKind::New(ty), loc));
             }
             TokenKind::Struct => {
                 let start = tok.loc;
@@ -1079,18 +991,12 @@ impl<'data> Parser<'data> {
                         let tok = self.expect_tok(TokenKind::RBrace, "expected '}' token")?;
 
                         let stmts = self.ast.add_stmts(stmts);
-                        return Ok(Expr {
-                            kind: ExprKind::Struct(stmts),
-                            loc: l_from(start, tok.loc),
-                        });
+                        return Ok(e(ExprKind::Struct(stmts), l_from(start, tok.loc)));
                     }
                     _ => {
                         let ty = self.parse_type()?;
                         let (loc, ty) = (l_from(tok.loc, ty.loc), self.ast.add_ty(ty));
-                        return Ok(Expr {
-                            kind: ExprKind::UnitStruct(ty),
-                            loc,
-                        });
+                        return Ok(e(ExprKind::UnitStruct(ty), loc));
                     }
                 }
             }
@@ -1111,13 +1017,11 @@ impl<'data> Parser<'data> {
                 let end = self.expect_tok(TokenKind::RBracket, "expected a ']' here")?;
                 expr_list.push(expr);
 
-                return Ok(Expr {
-                    kind: ExprKind::List {
-                        ty: None,
-                        values: self.ast.add_exprs(expr_list),
-                    },
-                    loc: l_from(start_loc, end.loc),
-                });
+                let kind = ExprKind::List {
+                    ty: None,
+                    values: self.ast.add_exprs(expr_list),
+                };
+                return Ok(e(kind, l_from(start_loc, end.loc)));
             }
             TokenKind::LParen => {
                 self.eat_newline();
@@ -1176,13 +1080,11 @@ impl<'data> Parser<'data> {
                 self.eat_newline();
                 let expr = self.parse_expr()?;
 
-                return Ok(Expr {
-                    loc: l_from(tok.loc, expr.loc),
-                    kind: ExprKind::Function {
-                        params: self.ast.add_params(params),
-                        body: self.ast.add_expr(expr),
-                    },
-                });
+                let kind = ExprKind::Function {
+                    params: self.ast.add_params(params),
+                    body: self.ast.add_expr(expr),
+                };
+                return Ok(e(kind, l_from(tok.loc, expr.loc)));
             }
             TokenKind::LBrace => {
                 let start = tok.loc;
@@ -1200,10 +1102,7 @@ impl<'data> Parser<'data> {
                 let tok = self.expect_tok(TokenKind::RBrace, "expected '}' token")?;
 
                 let stmts = self.ast.add_stmts(stmts);
-                return Ok(Expr {
-                    kind: ExprKind::Block(stmts),
-                    loc: l_from(start, tok.loc),
-                });
+                return Ok(e(ExprKind::Block(stmts), l_from(start, tok.loc)));
             }
             _ => return Err(self.err("unexpected token here", tok.loc)),
         }
