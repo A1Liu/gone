@@ -285,8 +285,7 @@ impl Drop for Symbols {
 
 #[repr(u32)]
 pub enum BuiltinSymbol {
-    Main = 0,
-    It,
+    It = 0,
     Underscore,
 }
 
@@ -297,8 +296,6 @@ impl Symbols {
             to_symbol: HashMap::new(),
             to_name: Vec::new(),
         };
-
-        new_self.add_str("main");
 
         new_self.add_str("it");
         new_self.add_str("_");

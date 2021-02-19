@@ -38,6 +38,7 @@ pub enum TokenKind<'a> {
     PlusPlus,
     DashDash,
     Colon,
+    Arrow,
 
     Eq,
     EqEq,
@@ -73,6 +74,7 @@ pub enum TokenKind<'a> {
 
     Semicolon,
     Comma,
+    Newline,
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -177,7 +179,8 @@ impl<'input, 'lexer, 'output> Iterator for Lexing<'input, 'lexer, 'output> {
 
         match self.kill_whitespace() {
             Err(s) => err_ret!(s),
-            Ok(()) => {}
+            Ok(true) => ret!(TokenKind::Newline),
+            Ok(false) => {}
         }
 
         if self.current == self.data.len() {
@@ -358,6 +361,8 @@ impl<'input, 'lexer, 'output> Iterator for Lexing<'input, 'lexer, 'output> {
             b'=' => {
                 if self.peek_eq(b'=') {
                     incr_ret!(TokenKind::EqEq);
+                } else if self.peek_eq(b'>') {
+                    incr_ret!(TokenKind::Arrow);
                 } else {
                     ret!(TokenKind::Eq);
                 }
@@ -399,7 +404,8 @@ const WHITESPACE: [u8; 2] = [b' ', b'\t'];
 const CRLF: [u8; 2] = [b'\r', b'\n'];
 
 impl<'input, 'lexer, 'output> Lexing<'input, 'lexer, 'output> {
-    pub fn kill_whitespace(&mut self) -> Result<(), &'static str> {
+    pub fn kill_whitespace(&mut self) -> Result<bool, &'static str> {
+        let mut newlined = false;
         self.begin = self.current;
 
         loop {
@@ -411,22 +417,14 @@ impl<'input, 'lexer, 'output> Lexing<'input, 'lexer, 'output> {
                 self.current += 2;
                 loop {
                     if self.current == self.data.len() {
-                        return Ok(());
+                        return Ok(newlined);
                     }
 
-                    if self.peek_eq(b'\n') {
+                    if self.peek_eq(b'\n') || self.peek_eq_series(&CRLF) {
+                        newlined = true;
                         break;
-                    } else if self.peek_eq_series(&CRLF) {
-                        break;
-                    } else if self.peek_eq_series(&[b'\\', b'\n']) {
-                        self.current += 2;
-                        continue;
-                    } else if self.peek_eq_series(&[b'\\', b'\r', b'\n']) {
-                        self.current += 3;
-                        continue;
-                    } else {
-                        self.current += 1;
                     }
+                    self.current += 1;
                 }
             } else if self.peek_eq_series(&[b'/', b'*']) {
                 self.current += 2;
@@ -439,6 +437,11 @@ impl<'input, 'lexer, 'output> Lexing<'input, 'lexer, 'output> {
                         break;
                     }
 
+                    if self.peek_eq(b'\n') || self.peek_eq_series(&CRLF) {
+                        newlined = true;
+                        break;
+                    }
+
                     self.current += 1;
                 }
 
@@ -447,19 +450,17 @@ impl<'input, 'lexer, 'output> Lexing<'input, 'lexer, 'output> {
             }
 
             if self.peek_eq(b'\n') {
+                newlined = true;
                 self.current += 1;
             } else if self.peek_eq_series(&CRLF) {
+                newlined = true;
                 self.current += 2;
-            } else if self.peek_eq_series(&[b'\\', b'\n']) {
-                self.current += 2;
-            } else if self.peek_eq_series(&[b'\\', b'\r', b'\n']) {
-                self.current += 3;
             } else {
                 break;
             }
         }
 
-        return Ok(());
+        return Ok(newlined);
     }
     #[inline]
     pub fn expect(&mut self) -> Result<u8, &'static str> {

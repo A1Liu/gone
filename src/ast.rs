@@ -21,7 +21,6 @@ pub enum BinOp {
     BitOr,
     BoolAnd,
     BoolOr,
-    Range,
 }
 
 #[derive(Debug, Clone, PartialEq, Hash, Eq, Copy)]
@@ -41,7 +40,7 @@ pub enum UnaryOp {
 pub enum TypeModifier {
     Pointer,
     Array(u64),
-    List,
+    VarArray,
     Slice,
     Varargs,
 }
@@ -62,13 +61,14 @@ pub enum TypeBase<'a> {
 pub struct Type<'a> {
     pub modifiers: &'a [TypeModifier],
     pub base: TypeBase<'a>,
+    pub loc: CodeLoc,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct Decl<'a> {
     pub idents: &'a [u32],
     pub ty: Option<Type<'a>>,
-    pub expr: &'a Expr<'a>,
+    pub expr: Option<&'a Expr<'a>>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -77,7 +77,13 @@ pub enum ExprKind<'a> {
     // Sx(i64),
     StringLit(&'a str),
     Ident(u32),
+    Function {
+        params: &'a [(Decl<'a>, CodeLoc)],
+        body: &'a Expr<'a>,
+    },
+    Block(&'a [Statement<'a>]),
     BinOp(BinOp, &'a Expr<'a>, &'a Expr<'a>),
+    Range(Option<&'a Expr<'a>>, Option<&'a Expr<'a>>),
     List {
         ty: Option<Type<'a>>,
         values: &'a [Expr<'a>],
@@ -100,7 +106,6 @@ pub enum ExprKind<'a> {
         ty: Option<Type<'a>>,
         expr: &'a Expr<'a>,
     },
-    Decl(Decl<'a>),
     Assign(&'a Expr<'a>, &'a Expr<'a>),
     MutAssign {
         op: BinOp,
@@ -117,7 +122,9 @@ pub struct Expr<'a> {
 
 #[derive(Debug, Clone, Copy)]
 pub enum StatementKind<'a> {
+    Noop,
     Expr(ExprKind<'a>),
+    Decl(Decl<'a>),
     Ret,
     RetVal(Expr<'a>),
     Branch {
@@ -125,7 +132,6 @@ pub enum StatementKind<'a> {
         if_body: &'a Statement<'a>,
         else_body: Option<&'a Statement<'a>>,
     },
-    Block(&'a [Statement<'a>]),
     For {
         iter: Expr<'a>,
         source: Expr<'a>,

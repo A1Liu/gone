@@ -1,6 +1,14 @@
-hello := "Hello, ";
-world := "world!";
+debug := (text: string) => print(text)
 
-for hello print(it);
-for idx in 0...len(world) print(world[idx]);
-print("\n");
+*i = 12
+
+hello_outer := "Hello, "
+world := "world!"
+
+main := (hello: string) string => {
+  for hello print(it)
+  for idx in 0...len(world) print(world[idx])
+  print("\n")
+}
+
+main(hello_outer)

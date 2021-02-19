@@ -32,10 +32,15 @@ impl Drop for Ast {
 
 pub fn parse_file(lexer: &mut Lexer, id: u32, file: &str) -> Result<Ast, Error> {
     let mut parser = Parser::new(id, lexer.lex(file));
+    parser.eat_newline();
+    // let toks: Vec<_> = parser.tokens.iter().map(|a| a.kind).collect();
+    // println!("{:?}", toks);
 
     let mut stmts = Vec::new();
     while parser.current < parser.tokens.len() {
-        stmts.push(parser.parse_stmt()?);
+        let stmt = parser.parse_stmt()?;
+
+        stmts.push(stmt);
     }
 
     let stmts = parser.buckets.add_array(stmts);
@@ -61,34 +66,18 @@ impl<'data> Parser<'data> {
 
     pub fn parse_stmt(&mut self) -> Result<Statement<'static>, Error> {
         match self.peek_err()?.kind {
-            TokenKind::LBrace => {
-                let start = self.pop().unwrap().loc;
-
-                let mut stmts = Vec::new();
-
-                let mut tok = self.peek_err()?;
-                while tok.kind != TokenKind::RBrace {
-                    stmts.push(self.parse_stmt()?);
-                    tok = self.peek_err()?;
-                }
-
-                let tok = self.expect_tok(TokenKind::RBrace, "expected '}' token")?;
-
-                let stmts = self.buckets.add_array(stmts);
-                return Ok(Statement {
-                    kind: StatementKind::Block(stmts),
-                    loc: l_from(start, tok.loc),
-                });
-            }
             TokenKind::For => {
                 let start = self.pop().unwrap().loc;
 
                 let first = self.parse_expr()?;
+                self.eat_newline();
                 let in_tok = self.peek_err()?;
 
                 if in_tok.kind == TokenKind::In {
                     self.pop().unwrap();
+
                     let second = self.parse_expr()?;
+                    self.eat_newline();
                     let body = self.parse_stmt()?;
 
                     return Ok(Statement {
@@ -115,9 +104,50 @@ impl<'data> Parser<'data> {
                     },
                 });
             }
-            x => {
+
+            TokenKind::Ident(id) => {
+                let tok = match self.peek_2() {
+                    Some(tok) => tok,
+                    None => {
+                        let expr = self.parse_expr()?;
+                        self.eat_line_ending();
+
+                        return Ok(Statement {
+                            kind: StatementKind::Expr(expr.kind),
+                            loc: expr.loc,
+                        });
+                    }
+                };
+
+                if tok.kind != TokenKind::Comma && tok.kind != TokenKind::Colon {
+                    let expr = self.parse_expr()?;
+                    self.eat_line_ending();
+
+                    return Ok(Statement {
+                        kind: StatementKind::Expr(expr.kind),
+                        loc: expr.loc,
+                    });
+                }
+
+                let (decl, loc) = self.expect_decl()?;
+                self.eat_line_ending();
+
+                return Ok(Statement {
+                    kind: StatementKind::Decl(decl),
+                    loc,
+                });
+            }
+
+            TokenKind::Semicolon | TokenKind::Newline => {
+                return Ok(Statement {
+                    kind: StatementKind::Noop,
+                    loc: self.pop().unwrap().loc,
+                });
+            }
+
+            _ => {
                 let expr = self.parse_expr()?;
-                self.expect_tok(TokenKind::Semicolon, "expected a ';' token")?;
+                self.eat_line_ending();
 
                 return Ok(Statement {
                     kind: StatementKind::Expr(expr.kind),
@@ -125,66 +155,6 @@ impl<'data> Parser<'data> {
                 });
             }
         }
-    }
-
-    #[inline]
-    pub fn parse_expr(&mut self) -> Result<Expr<'static>, Error> {
-        return self.parse_decl();
-    }
-
-    pub fn parse_decl(&mut self) -> Result<Expr<'static>, Error> {
-        let tok = self.peek_err()?;
-        let (ident, mut loc) = match tok.kind {
-            TokenKind::Ident(sym) => (sym, tok.loc),
-            _ => return self.parse_assignment(),
-        };
-
-        let tok = match self.peek_2() {
-            Some(tok) => tok,
-            None => return self.parse_assignment(),
-        };
-
-        if tok.kind != TokenKind::Comma && tok.kind != TokenKind::Colon {
-            return self.parse_assignment();
-        }
-
-        self.pop().unwrap();
-
-        let mut idents = vec![ident];
-        let mut tok = self.pop_err()?;
-        while tok.kind == TokenKind::Comma {
-            let ident_tok = self.pop_err()?;
-            if let TokenKind::Ident(id) = ident_tok.kind {
-                idents.push(id);
-                loc = l_from(loc, ident_tok.loc);
-                tok = self.pop_err()?;
-                continue;
-            }
-
-            return Err(self.err("expected this to be an identifier", ident_tok.loc));
-        }
-
-        if tok.kind != TokenKind::Colon {
-            return Err(self.err("expected this to be a ':' token", tok.loc));
-        }
-
-        let tok = self.peek_err()?;
-        let ty = if tok.kind != TokenKind::Eq {
-            Some(self.parse_type()?)
-        } else {
-            None
-        };
-
-        let tok = self.expect_tok(TokenKind::Eq, "expected an '=' token")?;
-
-        let expr = self.parse_expr()?;
-        let expr = self.buckets.add(expr);
-
-        let idents = self.buckets.add_array(idents);
-        return Ok(Expr {
-            loc: l_from(loc, expr.loc),
-            kind: ExprKind::Decl(Decl { idents, ty, expr }),
-        });
     }
 
     pub fn expect_decl(&mut self) -> Result<(Decl<'static>, CodeLoc), Error> {
@@ -196,6 +166,7 @@ impl<'data> Parser<'data> {
 
         let mut tok = self.pop_err()?;
         while tok.kind == TokenKind::Comma {
+            self.eat_newline();
             let ident_tok = self.pop_err()?;
             if let TokenKind::Ident(id) = ident_tok.kind {
                 idents.push(id);
@@ -211,28 +182,49 @@ impl<'data> Parser<'data> {
             return Err(self.err("expected this to be a ':' token", tok.loc));
         }
 
+        self.eat_newline();
         let tok = self.peek_err()?;
         let ty = if tok.kind != TokenKind::Eq {
-            Some(self.parse_type()?)
+            let ty = self.parse_type()?;
+            self.eat_newline();
+            if tok.kind != TokenKind::Eq {
+                let loc = l_from(loc, ty.loc);
+                let (ty, expr, idents) = (Some(ty), None, self.buckets.add_array(idents));
+                return Ok((Decl { idents, ty, expr }, loc));
+            }
+
+            Some(ty)
         } else {
             None
         };
 
         let tok = self.expect_tok(TokenKind::Eq, "expected an '=' token")?;
-
+        self.eat_newline();
         let expr = self.parse_expr()?;
-        let expr = self.buckets.add(expr);
+        let (expr_loc, expr) = (expr.loc, Some(&*self.buckets.add(expr)));
 
         let idents = self.buckets.add_array(idents);
-        return Ok((Decl { idents, ty, expr }, l_from(loc, expr.loc)));
+        return Ok((Decl { idents, ty, expr }, l_from(loc, expr_loc)));
     }
 
-    pub fn parse_assignment(&mut self) -> Result<Expr<'static>, Error> {
+    #[inline]
+    pub fn parse_expr(&mut self) -> Result<Expr<'static>, Error> {
+        return self.parse_assign();
+    }
+
+    pub fn parse_assign(&mut self) -> Result<Expr<'static>, Error> {
         let left = self.parse_ternary()?;
-        match self.peek_err()?.kind {
+
+        let tok = match self.peek() {
+            Some(t) => t,
+            None => return Ok(left),
+        };
+
+        match tok.kind {
             TokenKind::Eq => {
                 self.pop().unwrap();
-                let right = self.parse_assignment()?;
+                self.eat_newline();
+                let right = self.parse_assign()?;
                 let (right, left) = self.buckets.add((right, left));
                 return Ok(Expr {
                     loc: l_from(left.loc, right.loc),
@@ -241,7 +233,8 @@ impl<'data> Parser<'data> {
             }
             TokenKind::PlusEq => {
                 self.pop().unwrap();
-                let right = self.parse_assignment()?;
+                self.eat_newline();
+                let right = self.parse_assign()?;
                 let (right, left) = self.buckets.add((right, left));
                 return Ok(Expr {
                     loc: l_from(left.loc, right.loc),
@@ -254,11 +247,11 @@ impl<'data> Parser<'data> {
             }
             TokenKind::DashEq => {
                 self.pop().unwrap();
-                let right = self.parse_assignment()?;
+                self.eat_newline();
+                let right = self.parse_assign()?;
                 let (right, left) = self.buckets.add((right, left));
                 return Ok(Expr {
                     loc: l_from(left.loc, right.loc),
-                    //Not sure if I should create new ExprKind or modify Assign
                     kind: ExprKind::MutAssign {
                         target: left,
                         value: right,
@@ -268,11 +261,11 @@ impl<'data> Parser<'data> {
             }
             TokenKind::StarEq => {
                 self.pop().unwrap();
-                let right = self.parse_assignment()?;
+                self.eat_newline();
+                let right = self.parse_assign()?;
                 let (right, left) = self.buckets.add((right, left));
                 return Ok(Expr {
                     loc: l_from(left.loc, right.loc),
-                    //Not sure if I should create new ExprKind or modify Assign
                     kind: ExprKind::MutAssign {
                         target: left,
                         value: right,
@@ -282,11 +275,11 @@ impl<'data> Parser<'data> {
             }
             TokenKind::SlashEq => {
                 self.pop().unwrap();
-                let right = self.parse_assignment()?;
+                self.eat_newline();
+                let right = self.parse_assign()?;
                 let (right, left) = self.buckets.add((right, left));
                 return Ok(Expr {
                     loc: l_from(left.loc, right.loc),
-                    //Not sure if I should create new ExprKind or modify Assign
                     kind: ExprKind::MutAssign {
                         target: left,
                         value: right,
@@ -296,11 +289,10 @@ impl<'data> Parser<'data> {
             }
             TokenKind::PercentEq => {
                 self.pop().unwrap();
-                let right = self.parse_assignment()?;
+                let right = self.parse_assign()?;
                 let (right, left) = self.buckets.add((right, left));
                 return Ok(Expr {
                     loc: l_from(left.loc, right.loc),
-                    //Not sure if I should create new ExprKind or modify Assign
                     kind: ExprKind::MutAssign {
                         target: left,
                         value: right,
@@ -310,11 +302,11 @@ impl<'data> Parser<'data> {
             }
             TokenKind::LtLtEq => {
                 self.pop().unwrap();
-                let right = self.parse_assignment()?;
+                self.eat_newline();
+                let right = self.parse_assign()?;
                 let (right, left) = self.buckets.add((right, left));
                 return Ok(Expr {
                     loc: l_from(left.loc, right.loc),
-                    //Not sure if I should create new ExprKind or modify Assign
                     kind: ExprKind::MutAssign {
                         target: left,
                         value: right,
@@ -324,11 +316,10 @@ impl<'data> Parser<'data> {
             }
             TokenKind::GtGtEq => {
                 self.pop().unwrap();
-                let right = self.parse_assignment()?;
+                let right = self.parse_assign()?;
                 let (right, left) = self.buckets.add((right, left));
                 return Ok(Expr {
                     loc: l_from(left.loc, right.loc),
-                    //Not sure if I should create new ExprKind or modify Assign
                     kind: ExprKind::MutAssign {
                         target: left,
                         value: right,
@@ -338,11 +329,11 @@ impl<'data> Parser<'data> {
             }
             TokenKind::AmpEq => {
                 self.pop().unwrap();
-                let right = self.parse_assignment()?;
+                self.eat_newline();
+                let right = self.parse_assign()?;
                 let (right, left) = self.buckets.add((right, left));
                 return Ok(Expr {
                     loc: l_from(left.loc, right.loc),
-                    //Not sure if I should create new ExprKind or modify Assign
                     kind: ExprKind::MutAssign {
                         target: left,
                         value: right,
@@ -352,11 +343,10 @@ impl<'data> Parser<'data> {
             }
             TokenKind::CaretEq => {
                 self.pop().unwrap();
-                let right = self.parse_assignment()?;
+                let right = self.parse_assign()?;
                 let (right, left) = self.buckets.add((right, left));
                 return Ok(Expr {
                     loc: l_from(left.loc, right.loc),
-                    //Not sure if I should create new ExprKind or modify Assign
                     kind: ExprKind::MutAssign {
                         target: left,
                         value: right,
@@ -366,11 +356,11 @@ impl<'data> Parser<'data> {
             }
             TokenKind::LineEq => {
                 self.pop().unwrap();
-                let right = self.parse_assignment()?;
+                self.eat_newline();
+                let right = self.parse_assign()?;
                 let (right, left) = self.buckets.add((right, left));
                 return Ok(Expr {
                     loc: l_from(left.loc, right.loc),
-                    //Not sure if I should create new ExprKind or modify Assign
                     kind: ExprKind::MutAssign {
                         target: left,
                         value: right,
@@ -387,14 +377,20 @@ impl<'data> Parser<'data> {
     pub fn parse_ternary(&mut self) -> Result<Expr<'static>, Error> {
         let condition = self.parse_bool_or()?;
 
-        let question_tok = self.peek_err()?;
+        let question_tok = match self.peek() {
+            Some(tok) => tok,
+            None => return Ok(condition),
+        };
+
         if question_tok.kind != TokenKind::Question {
             return Ok(condition);
         }
 
         self.pop().unwrap();
+        self.eat_newline();
 
         let if_true = self.parse_expr()?;
+        self.eat_newline();
 
         let colon_tok = self.pop_err()?;
         if colon_tok.kind != TokenKind::Colon {
@@ -404,6 +400,7 @@ impl<'data> Parser<'data> {
             ));
         }
 
+        self.eat_newline();
         let if_false = self.parse_bool_or()?;
 
         let condition = self.buckets.add(condition);
@@ -422,11 +419,12 @@ impl<'data> Parser<'data> {
 
     pub fn parse_bool_or(&mut self) -> Result<Expr<'static>, Error> {
         let mut expr = self.parse_bool_and()?;
-        loop {
+        while let Some(tok) = self.peek() {
             let start_loc = expr.loc;
-            match self.peek_err()?.kind {
+            match tok.kind {
                 TokenKind::LineLine => {
                     self.pop().unwrap();
+                    self.eat_newline();
 
                     let right = self.parse_bool_and()?;
                     let end_loc = right.loc;
@@ -441,15 +439,18 @@ impl<'data> Parser<'data> {
                 _ => return Ok(expr),
             }
         }
+
+        return Ok(expr);
     }
 
     pub fn parse_bool_and(&mut self) -> Result<Expr<'static>, Error> {
         let mut expr = self.parse_bit_or()?;
-        loop {
+        while let Some(tok) = self.peek() {
             let start_loc = expr.loc;
-            match self.peek_err()?.kind {
+            match tok.kind {
                 TokenKind::AmpAmp => {
                     self.pop().unwrap();
+                    self.eat_newline();
 
                     let right = self.parse_bit_or()?;
                     let end_loc = right.loc;
@@ -464,15 +465,18 @@ impl<'data> Parser<'data> {
                 _ => return Ok(expr),
             }
         }
+
+        return Ok(expr);
     }
 
     pub fn parse_bit_or(&mut self) -> Result<Expr<'static>, Error> {
         let mut expr = self.parse_bit_xor()?;
-        loop {
+        while let Some(tok) = self.peek() {
             let start_loc = expr.loc;
-            match self.peek_err()?.kind {
+            match tok.kind {
                 TokenKind::Line => {
                     self.pop().unwrap();
+                    self.eat_newline();
 
                     let right = self.parse_bit_xor()?;
                     let end_loc = right.loc;
@@ -487,15 +491,18 @@ impl<'data> Parser<'data> {
                 _ => return Ok(expr),
             }
         }
+
+        return Ok(expr);
     }
 
     pub fn parse_bit_xor(&mut self) -> Result<Expr<'static>, Error> {
         let mut expr = self.parse_bit_and()?;
-        loop {
+        while let Some(tok) = self.peek() {
             let start_loc = expr.loc;
-            match self.peek_err()?.kind {
+            match tok.kind {
                 TokenKind::Caret => {
                     self.pop().unwrap();
+                    self.eat_newline();
 
                     let right = self.parse_bit_and()?;
                     let end_loc = right.loc;
@@ -510,15 +517,18 @@ impl<'data> Parser<'data> {
                 _ => return Ok(expr),
             }
         }
+
+        return Ok(expr);
     }
 
     pub fn parse_bit_and(&mut self) -> Result<Expr<'static>, Error> {
         let mut expr = self.parse_equality()?;
-        loop {
+        while let Some(tok) = self.peek() {
             let start_loc = expr.loc;
-            match self.peek_err()?.kind {
+            match tok.kind {
                 TokenKind::Amp => {
                     self.pop().unwrap();
+                    self.eat_newline();
 
                     let right = self.parse_equality()?;
                     let end_loc = right.loc;
@@ -533,15 +543,18 @@ impl<'data> Parser<'data> {
                 _ => return Ok(expr),
             }
         }
+
+        return Ok(expr);
     }
 
     pub fn parse_equality(&mut self) -> Result<Expr<'static>, Error> {
         let mut expr = self.parse_comparison()?;
-        loop {
+        while let Some(tok) = self.peek() {
             let start_loc = expr.loc;
-            match self.peek_err()?.kind {
+            match tok.kind {
                 TokenKind::EqEq => {
                     self.pop().unwrap();
+                    self.eat_newline();
 
                     let right = self.parse_comparison()?;
                     let end_loc = right.loc;
@@ -555,6 +568,7 @@ impl<'data> Parser<'data> {
                 }
                 TokenKind::Neq => {
                     self.pop().unwrap();
+                    self.eat_newline();
 
                     let right = self.parse_comparison()?;
                     let end_loc = right.loc;
@@ -569,15 +583,19 @@ impl<'data> Parser<'data> {
                 _ => return Ok(expr),
             }
         }
+
+        return Ok(expr);
     }
 
     pub fn parse_comparison(&mut self) -> Result<Expr<'static>, Error> {
         let mut expr = self.parse_shift()?;
-        loop {
+
+        while let Some(tok) = self.peek() {
             let start_loc = expr.loc;
-            match self.peek_err()?.kind {
+            match tok.kind {
                 TokenKind::Lt => {
                     self.pop().unwrap();
+                    self.eat_newline();
 
                     let right = self.parse_shift()?;
                     let end_loc = right.loc;
@@ -604,6 +622,7 @@ impl<'data> Parser<'data> {
                 }
                 TokenKind::Gt => {
                     self.pop().unwrap();
+                    self.eat_newline();
 
                     let right = self.parse_shift()?;
                     let end_loc = right.loc;
@@ -617,6 +636,7 @@ impl<'data> Parser<'data> {
                 }
                 TokenKind::Geq => {
                     self.pop().unwrap();
+                    self.eat_newline();
 
                     let right = self.parse_shift()?;
                     let end_loc = right.loc;
@@ -631,15 +651,19 @@ impl<'data> Parser<'data> {
                 _ => return Ok(expr),
             }
         }
+
+        return Ok(expr);
     }
 
     pub fn parse_shift(&mut self) -> Result<Expr<'static>, Error> {
         let mut expr = self.parse_add()?;
-        loop {
+        while let Some(tok) = self.peek() {
             let start_loc = expr.loc;
             match self.peek_err()?.kind {
                 TokenKind::GtGt => {
                     self.pop().unwrap();
+                    self.eat_newline();
+
                     let right = self.parse_add()?;
                     let end_loc = right.loc;
                     let left = self.buckets.add(expr);
@@ -652,6 +676,8 @@ impl<'data> Parser<'data> {
                 }
                 TokenKind::LtLt => {
                     self.pop().unwrap();
+                    self.eat_newline();
+
                     let right = self.parse_add()?;
                     let end_loc = right.loc;
                     let left = self.buckets.add(expr);
@@ -665,15 +691,20 @@ impl<'data> Parser<'data> {
                 _ => return Ok(expr),
             }
         }
+
+        return Ok(expr);
     }
 
     pub fn parse_add(&mut self) -> Result<Expr<'static>, Error> {
         let mut expr = self.parse_multiply()?;
-        loop {
+
+        while let Some(tok) = self.peek() {
             let start_loc = expr.loc;
             match self.peek_err()?.kind {
                 TokenKind::Plus => {
                     self.pop().unwrap();
+                    self.eat_newline();
+
                     let right = self.parse_multiply()?;
                     let end_loc = right.loc;
                     let left = self.buckets.add(expr);
@@ -686,6 +717,8 @@ impl<'data> Parser<'data> {
                 }
                 TokenKind::Dash => {
                     self.pop().unwrap();
+                    self.eat_newline();
+
                     let right = self.parse_multiply()?;
                     let end_loc = right.loc;
                     let left = self.buckets.add(expr);
@@ -699,15 +732,20 @@ impl<'data> Parser<'data> {
                 _ => return Ok(expr),
             }
         }
+
+        return Ok(expr);
     }
 
     pub fn parse_multiply(&mut self) -> Result<Expr<'static>, Error> {
         let mut expr = self.parse_prefix()?;
-        loop {
+
+        while let Some(tok) = self.peek() {
             let start_loc = expr.loc;
             match self.peek_err()?.kind {
                 TokenKind::Slash => {
                     self.pop().unwrap();
+                    self.eat_newline();
+
                     let right = self.parse_prefix()?;
                     let end_loc = right.loc;
                     let left = self.buckets.add(expr);
@@ -720,6 +758,8 @@ impl<'data> Parser<'data> {
                 }
                 TokenKind::Star => {
                     self.pop().unwrap();
+                    self.eat_newline();
+
                     let right = self.parse_prefix()?;
                     let end_loc = right.loc;
                     let left = self.buckets.add(expr);
@@ -732,6 +772,8 @@ impl<'data> Parser<'data> {
                 }
                 TokenKind::Percent => {
                     self.pop().unwrap();
+                    self.eat_newline();
+
                     let right = self.parse_prefix()?;
                     let end_loc = right.loc;
                     let left = self.buckets.add(expr);
@@ -745,6 +787,8 @@ impl<'data> Parser<'data> {
                 _ => return Ok(expr),
             }
         }
+
+        return Ok(expr);
     }
 
     pub fn parse_prefix(&mut self) -> Result<Expr<'static>, Error> {
@@ -752,6 +796,8 @@ impl<'data> Parser<'data> {
         match tok.kind {
             TokenKind::Amp => {
                 self.pop().unwrap();
+                self.eat_newline();
+
                 let target = self.parse_prefix()?;
                 let target = self.buckets.add(target);
                 return Ok(Expr {
@@ -761,6 +807,8 @@ impl<'data> Parser<'data> {
             }
             TokenKind::Star => {
                 self.pop().unwrap();
+                self.eat_newline();
+
                 let target = self.parse_prefix()?;
                 let target = self.buckets.add(target);
                 return Ok(Expr {
@@ -771,6 +819,8 @@ impl<'data> Parser<'data> {
 
             TokenKind::Bang => {
                 self.pop().unwrap();
+                self.eat_newline();
+
                 let target = self.parse_prefix()?;
                 let target = self.buckets.add(target);
                 return Ok(Expr {
@@ -780,6 +830,8 @@ impl<'data> Parser<'data> {
             }
             TokenKind::Tilde => {
                 self.pop().unwrap();
+                self.eat_newline();
+
                 let target = self.parse_prefix()?;
                 let target = self.buckets.add(target);
                 return Ok(Expr {
@@ -789,6 +841,8 @@ impl<'data> Parser<'data> {
             }
             TokenKind::Dash => {
                 self.pop().unwrap();
+                self.eat_newline();
+
                 let target = self.parse_prefix()?;
                 let target = self.buckets.add(target);
                 return Ok(Expr {
@@ -803,6 +857,7 @@ impl<'data> Parser<'data> {
 
     pub fn parse_range(&mut self) -> Result<Expr<'static>, Error> {
         let start = self.parse_postfix()?;
+
         let tok = match self.peek() {
             Some(tok) => tok,
             None => return Ok(start),
@@ -819,7 +874,7 @@ impl<'data> Parser<'data> {
         let loc = l_from(start.loc, end.loc);
 
         #[rustfmt::skip]
-        let range = Expr { loc, kind: ExprKind::BinOp(BinOp::Range, start, end), };
+        let range = Expr { loc, kind: ExprKind::Range(Some(start), Some(end)), };
 
         let tok = match self.peek() {
             Some(tok) => tok,
@@ -837,21 +892,26 @@ impl<'data> Parser<'data> {
         let mut operand = self.parse_atom()?;
         let start_loc = operand.loc;
 
-        loop {
-            match self.peek_err()?.kind {
+        while let Some(tok) = self.peek() {
+            match tok.kind {
                 TokenKind::LParen => {
                     self.pop().unwrap();
+                    self.eat_newline();
+
                     let mut params = Vec::new();
                     let rparen_tok = self.peek_err()?;
 
                     if rparen_tok.kind != TokenKind::RParen {
                         let param = self.parse_expr()?;
                         params.push(param);
+                        self.eat_newline();
                         let mut comma_tok = self.peek_err()?;
 
                         while comma_tok.kind == TokenKind::Comma {
                             self.pop().unwrap();
+                            self.eat_newline();
                             params.push(self.parse_expr()?);
+                            self.eat_newline();
                             comma_tok = self.peek_err()?;
                         }
 
@@ -887,7 +947,9 @@ impl<'data> Parser<'data> {
                 }
                 TokenKind::LBracket => {
                     let lbracket = self.pop().unwrap();
+                    self.eat_newline();
                     let index = self.parse_expr()?;
+                    self.eat_newline();
                     let rbracket =
                         self.expect_tok(TokenKind::RBracket, "expected a closing ']' bracket")?;
 
@@ -904,6 +966,7 @@ impl<'data> Parser<'data> {
                 }
                 TokenKind::Dot => {
                     self.pop().unwrap();
+                    self.eat_newline();
 
                     let ident_tok = self.pop_err()?;
                     if let TokenKind::Ident(member) = ident_tok.kind {
@@ -923,6 +986,8 @@ impl<'data> Parser<'data> {
                 _ => return Ok(operand),
             }
         }
+
+        return Ok(operand);
     }
 
     pub fn parse_atom(&mut self) -> Result<Expr<'static>, Error> {
@@ -932,14 +997,16 @@ impl<'data> Parser<'data> {
                 return Ok(Expr {
                     kind: ExprKind::Ident(i),
                     loc: tok.loc,
-                })
+                });
             }
             TokenKind::StringLit(string) => {
                 let mut string = string.as_str().to_string();
+                self.eat_newline();
                 let mut end_loc = tok.loc;
                 while let TokenKind::StringLit(tstr) = self.peek_err()?.kind {
                     string.push_str(tstr.as_str());
                     end_loc = l_from(end_loc, self.pop().unwrap().loc);
+                    self.eat_newline();
                 }
 
                 return Ok(Expr {
@@ -951,16 +1018,20 @@ impl<'data> Parser<'data> {
                 return Ok(Expr {
                     kind: ExprKind::Ux(num),
                     loc: tok.loc,
-                })
+                });
             }
             TokenKind::LBracket => {
                 let start_loc = tok.loc;
+                self.eat_newline();
                 let mut expr = self.parse_expr()?;
+                self.eat_newline();
                 let mut expr_list = Vec::new();
                 while self.peek_err()?.kind == TokenKind::Comma {
                     expr_list.push(expr);
                     self.pop().unwrap();
+                    self.eat_newline();
                     expr = self.parse_expr()?;
+                    self.eat_newline();
                 }
 
                 let end = self.expect_tok(TokenKind::RBracket, "expected a ']' here")?;
@@ -975,16 +1046,149 @@ impl<'data> Parser<'data> {
                 });
             }
             TokenKind::LParen => {
+                self.eat_newline();
+                let tok = self.peek_err()?;
+                let params = match tok.kind {
+                    TokenKind::Ident(_) => {
+                        let tok = match self.peek_2() {
+                            Some(tok) => tok,
+                            None => {
+                                let expr = self.parse_expr()?;
+                                self.eat_newline();
+
+                                let end =
+                                    self.expect_tok(TokenKind::RParen, "expected a ')' here")?;
+                                return Ok(expr);
+                            }
+                        };
+
+                        if tok.kind != TokenKind::Comma && tok.kind != TokenKind::Colon {
+                            let expr = self.parse_expr()?;
+                            self.eat_newline();
+
+                            let end = self.expect_tok(TokenKind::RParen, "expected a ')' here")?;
+                            return Ok(expr);
+                        }
+
+                        let mut params = Vec::new();
+                        loop {
+                            self.eat_newline();
+                            params.push(self.expect_decl()?);
+                            self.eat_newline();
+
+                            let tok = self.pop_err()?;
+
+                            if tok.kind == TokenKind::RParen {
+                                break;
+                            }
+
+                            if tok.kind != TokenKind::Comma {
+                                return Err(self.err("expected ',' or ')' here", tok.loc));
+                            }
+                        }
+
+                        params
+                    }
+                    TokenKind::RParen => {
+                        self.pop().unwrap();
+                        Vec::new()
+                    }
+                    _ => {
+                        let expr = self.parse_expr()?;
+
+                        let end = self.expect_tok(TokenKind::RParen, "expected a ')' here")?;
+                        return Ok(expr);
+                    }
+                };
+
+                self.eat_newline();
+                let ty = if self.peek_err()?.kind != TokenKind::Arrow {
+                    Some(self.parse_type()?)
+                } else {
+                    None
+                };
+
+                self.eat_newline();
+                self.expect_tok(TokenKind::Arrow, "expected a '=>' here")?;
+
+                self.eat_newline();
                 let expr = self.parse_expr()?;
-                let end = self.expect_tok(TokenKind::RParen, "expected a ')' here")?;
-                return Ok(expr);
+
+                return Ok(Expr {
+                    loc: l_from(tok.loc, expr.loc),
+                    kind: ExprKind::Function {
+                        params: self.buckets.add_array(params),
+                        body: self.buckets.add(expr),
+                    },
+                });
+            }
+            TokenKind::LBrace => {
+                let start = tok.loc;
+
+                let mut stmts = Vec::new();
+                self.eat_newline();
+                let mut tok = self.peek_err()?;
+                while tok.kind != TokenKind::RBrace {
+                    let stmt = self.parse_stmt()?;
+                    stmts.push(stmt);
+
+                    tok = self.peek_err()?;
+                }
+
+                let tok = self.expect_tok(TokenKind::RBrace, "expected '}' token")?;
+
+                let stmts = self.buckets.add_array(stmts);
+                return Ok(Expr {
+                    kind: ExprKind::Block(stmts),
+                    loc: l_from(start, tok.loc),
+                });
             }
             _ => return Err(self.err("unexpected token here", tok.loc)),
         }
     }
 
     pub fn parse_type(&mut self) -> Result<Type<'static>, Error> {
-        unimplemented!()
+        let mut modifiers = Vec::new();
+        let mut tok = self.pop_err()?;
+        let mut loc = tok.loc;
+        loop {
+            match tok.kind {
+                TokenKind::Star => modifiers.push(TypeModifier::Pointer),
+                TokenKind::DotDotDot => modifiers.push(TypeModifier::Varargs),
+                TokenKind::LBracket => {}
+
+                TokenKind::U64 => {
+                    let modifiers = self.buckets.add_array(modifiers);
+                    return Ok(Type {
+                        modifiers,
+                        base: TypeBase::U64,
+                        loc,
+                    });
+                }
+                TokenKind::Any => {
+                    let modifiers = self.buckets.add_array(modifiers);
+                    return Ok(Type {
+                        modifiers,
+                        base: TypeBase::Any,
+                        loc,
+                    });
+                }
+                TokenKind::Ident(id) => {
+                    let modifiers = self.buckets.add_array(modifiers);
+                    return Ok(Type {
+                        modifiers,
+                        base: TypeBase::Named(id),
+                        loc,
+                    });
+                }
+
+                kind => return Err(self.err("unexpected token while parsing type", tok.loc)),
+            }
+
+            self.eat_newline();
+            tok = self.pop_err()?;
+            loc = l_from(loc, tok.loc);
+        }
     }
 
     pub fn peek_err(&mut self) -> Result<Token<'data>, Error> {
@@ -1001,6 +1205,26 @@ impl<'data> Parser<'data> {
         self.current += 1;
 
         return Ok(tok);
+    }
+
+    pub fn eat_newline(&mut self) {
+        while let Some(Token {
+            kind: TokenKind::Newline,
+            ..
+        }) = self.peek()
+        {
+            self.current += 1;
+        }
+    }
+
+    pub fn eat_line_ending(&mut self) {
+        while let Some(tok) = self.peek() {
+            if tok.kind != TokenKind::Semicolon && tok.kind != TokenKind::Newline {
+                break;
+            }
+
+            self.current += 1;
+        }
     }
 
     pub fn expect_tok(

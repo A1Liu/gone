@@ -19,7 +19,8 @@ All of these are todo.
 - Macros from Jai
 - Structural Polymorphism from Jai
 - Defer from Jai
-- Light conditional compilation from Odin/Jai
+- Light conditional compilation from Rust
+- Light operator overloading from Jai
 
 ## Goals
 The goal of this language is to make it easier to ship medium quality software. Thus,
@@ -48,6 +49,8 @@ the philosophy of the compiler should be to optimize first and foremost for:
 ## Implementation Problems
 - How do we make garbage collection behave at runtime like manual memory management?
   - Moving for short lived objects, diff-based reference counting for long-lived
+- How do we do lifetime analysis, especially for recursive functions, without annotations?
+- How do we handle types at compile time?
 
 ## Architecture
 Compiler passes:

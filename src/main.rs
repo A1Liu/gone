@@ -32,7 +32,7 @@ fn compile(files: &FileDb) -> Result<(), Vec<Error>> {
                 continue;
             }
         };
-        println!("{:?}", ast.block());
+        println!("{:#?}", ast.block());
         asts.push(ast);
     }
 
