@@ -1,34 +1,7 @@
 use crate::ast::*;
-use crate::buckets::*;
 use crate::filedb::*;
 use crate::lexer::*;
 use crate::util::*;
-
-pub struct Ast {
-    pub buckets: BucketListFactory,
-    pub file: u32,
-    block: &'static [Statement<'static>],
-}
-
-impl Ast {
-    fn new(buckets: BucketListFactory, file: u32, block: &'static [Statement<'static>]) -> Self {
-        Self {
-            buckets,
-            file,
-            block,
-        }
-    }
-
-    pub fn block<'a>(&'a self) -> &'a [Statement<'a>] {
-        return self.block;
-    }
-}
-
-impl Drop for Ast {
-    fn drop(&mut self) {
-        unsafe { self.buckets.dealloc() }
-    }
-}
 
 pub fn parse_file(lexer: &mut Lexer, id: u32, file: &str) -> Result<Ast, Error> {
     let mut parser = Parser::new(id, lexer.lex(file));
@@ -43,28 +16,26 @@ pub fn parse_file(lexer: &mut Lexer, id: u32, file: &str) -> Result<Ast, Error> 
         stmts.push(stmt);
     }
 
-    let stmts = parser.buckets.add_array(stmts);
-    return Ok(Ast::new(parser.buckets, id, stmts));
+    parser.ast.globals = parser.ast.add_stmts(stmts);
+    return Ok(parser.ast);
 }
 
 pub struct Parser<'data> {
-    pub buckets: BucketListFactory,
     pub tokens: Vec<Token<'data>>,
     pub current: usize,
-    pub file: u32,
+    pub ast: Ast,
 }
 
 impl<'data> Parser<'data> {
     pub fn new(file: u32, tokens: impl Iterator<Item = Token<'data>>) -> Self {
         Self {
-            buckets: BucketListFactory::new(),
+            ast: Ast::new(file),
             tokens: tokens.collect(),
             current: 0,
-            file,
         }
     }
 
-    pub fn parse_stmt(&mut self) -> Result<Statement<'static>, Error> {
+    pub fn parse_stmt(&mut self) -> Result<Stmt, Error> {
         match self.peek_err()?.kind {
             TokenKind::For => {
                 let start = self.pop().unwrap().loc;
@@ -80,27 +51,27 @@ impl<'data> Parser<'data> {
                     self.eat_newline();
                     let body = self.parse_stmt()?;
 
-                    return Ok(Statement {
+                    return Ok(Stmt {
                         loc: l_from(start, body.loc),
-                        kind: StatementKind::For {
-                            iter: first,
-                            source: second,
-                            body: self.buckets.add(body),
+                        kind: StmtKind::For {
+                            iter: self.ast.add_expr(first),
+                            source: self.ast.add_expr(second),
+                            body: self.ast.add_stmt(body),
                         },
                     });
                 }
 
                 let body = self.parse_stmt()?;
 
-                return Ok(Statement {
+                return Ok(Stmt {
                     loc: l_from(start, body.loc),
-                    kind: StatementKind::For {
-                        iter: Expr {
+                    kind: StmtKind::For {
+                        iter: self.ast.add_expr(Expr {
                             kind: ExprKind::Ident(BuiltinSymbol::It as u32),
                             loc: first.loc,
-                        },
-                        source: first,
-                        body: self.buckets.add(body),
+                        }),
+                        source: self.ast.add_expr(first),
+                        body: self.ast.add_stmt(body),
                     },
                 });
             }
@@ -112,7 +83,6 @@ impl<'data> Parser<'data> {
                 self.eat_newline();
 
                 let if_body = self.parse_stmt()?;
-                let if_body = self.buckets.add(if_body);
                 self.eat_newline();
 
                 let (loc, else_body) = if let Some(Token {
@@ -123,17 +93,17 @@ impl<'data> Parser<'data> {
                     self.pop().unwrap();
                     self.eat_newline();
                     let else_body = self.parse_stmt()?;
-                    let else_body = self.buckets.add(else_body);
-                    (l_from(start, else_body.loc), Some(&*else_body))
+                    let (loc, else_body) = (else_body.loc, self.ast.add_stmt(else_body));
+                    (l_from(start, loc), Some(else_body))
                 } else {
                     (l_from(start, if_body.loc), None)
                 };
 
-                return Ok(Statement {
+                return Ok(Stmt {
                     loc,
-                    kind: StatementKind::Branch {
-                        if_cond,
-                        if_body,
+                    kind: StmtKind::Branch {
+                        if_cond: self.ast.add_expr(if_cond),
+                        if_body: self.ast.add_stmt(if_body),
                         else_body,
                     },
                 });
@@ -144,8 +114,8 @@ impl<'data> Parser<'data> {
                     let expr = self.parse_expr()?;
                     self.eat_line_ending();
 
-                    return Ok(Statement {
-                        kind: StatementKind::Expr(expr.kind),
+                    return Ok(Stmt {
+                        kind: StmtKind::Expr(expr.kind),
                         loc: expr.loc,
                     });
                 }
@@ -153,15 +123,15 @@ impl<'data> Parser<'data> {
                 let (decl, loc) = self.expect_decl()?;
                 self.eat_line_ending();
 
-                return Ok(Statement {
-                    kind: StatementKind::Decl(decl),
+                return Ok(Stmt {
+                    kind: StmtKind::Decl(decl),
                     loc,
                 });
             }
 
             TokenKind::Semicolon | TokenKind::Newline => {
-                return Ok(Statement {
-                    kind: StatementKind::Noop,
+                return Ok(Stmt {
+                    kind: StmtKind::Noop,
                     loc: self.pop().unwrap().loc,
                 });
             }
@@ -170,8 +140,8 @@ impl<'data> Parser<'data> {
                 let expr = self.parse_expr()?;
                 self.eat_line_ending();
 
-                return Ok(Statement {
-                    kind: StatementKind::Expr(expr.kind),
+                return Ok(Stmt {
+                    kind: StmtKind::Expr(expr.kind),
                     loc: expr.loc,
                 });
             }
@@ -198,7 +168,7 @@ impl<'data> Parser<'data> {
         return tok.kind == TokenKind::Comma || tok.kind == TokenKind::Colon;
     }
 
-    pub fn expect_decl(&mut self) -> Result<(Decl<'static>, CodeLoc), Error> {
+    pub fn expect_decl(&mut self) -> Result<(Decl, CodeLoc), Error> {
         let tok = self.pop_err()?;
         let (mut idents, mut loc) = match tok.kind {
             TokenKind::Ident(sym) => (vec![sym], tok.loc),
@@ -227,11 +197,11 @@ impl<'data> Parser<'data> {
         let tok = self.peek_err()?;
         let ty = if tok.kind != TokenKind::Eq {
             let ty = self.parse_type()?;
+            let (loc, ty) = (l_from(loc, ty.loc), self.ast.add_ty(ty));
             self.eat_newline();
             if let Some(tok) = self.peek() {
                 if tok.kind != TokenKind::Eq {
-                    let loc = l_from(loc, ty.loc);
-                    let (ty, expr, idents) = (Some(ty), None, self.buckets.add_array(idents));
+                    let (ty, expr, idents) = (Some(ty), None, self.ast.add_idents(idents));
                     return Ok((Decl { idents, ty, expr }, loc));
                 }
             }
@@ -244,18 +214,18 @@ impl<'data> Parser<'data> {
         let tok = self.expect_tok(TokenKind::Eq, "expected an '=' token")?;
         self.eat_newline();
         let expr = self.parse_expr()?;
-        let (expr_loc, expr) = (expr.loc, Some(&*self.buckets.add(expr)));
+        let (expr_loc, expr) = (expr.loc, Some(self.ast.add_expr(expr)));
 
-        let idents = self.buckets.add_array(idents);
+        let idents = self.ast.add_idents(idents);
         return Ok((Decl { idents, ty, expr }, l_from(loc, expr_loc)));
     }
 
     #[inline]
-    pub fn parse_expr(&mut self) -> Result<Expr<'static>, Error> {
+    pub fn parse_expr(&mut self) -> Result<Expr, Error> {
         return self.parse_assign();
     }
 
-    pub fn parse_assign(&mut self) -> Result<Expr<'static>, Error> {
+    pub fn parse_assign(&mut self) -> Result<Expr, Error> {
         let left = self.parse_ternary()?;
 
         let tok = match self.peek() {
@@ -268,9 +238,10 @@ impl<'data> Parser<'data> {
                 self.pop().unwrap();
                 self.eat_newline();
                 let right = self.parse_assign()?;
-                let (right, left) = self.buckets.add((right, left));
+                let loc = l_from(left.loc, right.loc);
+                let (right, left) = (self.ast.add_expr(right), self.ast.add_expr(left));
                 return Ok(Expr {
-                    loc: l_from(left.loc, right.loc),
+                    loc,
                     kind: ExprKind::Assign(left, right),
                 });
             }
@@ -278,9 +249,10 @@ impl<'data> Parser<'data> {
                 self.pop().unwrap();
                 self.eat_newline();
                 let right = self.parse_assign()?;
-                let (right, left) = self.buckets.add((right, left));
+                let loc = l_from(left.loc, right.loc);
+                let (right, left) = (self.ast.add_expr(right), self.ast.add_expr(left));
                 return Ok(Expr {
-                    loc: l_from(left.loc, right.loc),
+                    loc,
                     kind: ExprKind::MutAssign {
                         target: left,
                         value: right,
@@ -292,9 +264,10 @@ impl<'data> Parser<'data> {
                 self.pop().unwrap();
                 self.eat_newline();
                 let right = self.parse_assign()?;
-                let (right, left) = self.buckets.add((right, left));
+                let loc = l_from(left.loc, right.loc);
+                let (right, left) = (self.ast.add_expr(right), self.ast.add_expr(left));
                 return Ok(Expr {
-                    loc: l_from(left.loc, right.loc),
+                    loc,
                     kind: ExprKind::MutAssign {
                         target: left,
                         value: right,
@@ -306,9 +279,10 @@ impl<'data> Parser<'data> {
                 self.pop().unwrap();
                 self.eat_newline();
                 let right = self.parse_assign()?;
-                let (right, left) = self.buckets.add((right, left));
+                let loc = l_from(left.loc, right.loc);
+                let (right, left) = (self.ast.add_expr(right), self.ast.add_expr(left));
                 return Ok(Expr {
-                    loc: l_from(left.loc, right.loc),
+                    loc,
                     kind: ExprKind::MutAssign {
                         target: left,
                         value: right,
@@ -320,9 +294,10 @@ impl<'data> Parser<'data> {
                 self.pop().unwrap();
                 self.eat_newline();
                 let right = self.parse_assign()?;
-                let (right, left) = self.buckets.add((right, left));
+                let loc = l_from(left.loc, right.loc);
+                let (right, left) = (self.ast.add_expr(right), self.ast.add_expr(left));
                 return Ok(Expr {
-                    loc: l_from(left.loc, right.loc),
+                    loc,
                     kind: ExprKind::MutAssign {
                         target: left,
                         value: right,
@@ -333,9 +308,10 @@ impl<'data> Parser<'data> {
             TokenKind::PercentEq => {
                 self.pop().unwrap();
                 let right = self.parse_assign()?;
-                let (right, left) = self.buckets.add((right, left));
+                let loc = l_from(left.loc, right.loc);
+                let (right, left) = (self.ast.add_expr(right), self.ast.add_expr(left));
                 return Ok(Expr {
-                    loc: l_from(left.loc, right.loc),
+                    loc,
                     kind: ExprKind::MutAssign {
                         target: left,
                         value: right,
@@ -347,9 +323,10 @@ impl<'data> Parser<'data> {
                 self.pop().unwrap();
                 self.eat_newline();
                 let right = self.parse_assign()?;
-                let (right, left) = self.buckets.add((right, left));
+                let loc = l_from(left.loc, right.loc);
+                let (right, left) = (self.ast.add_expr(right), self.ast.add_expr(left));
                 return Ok(Expr {
-                    loc: l_from(left.loc, right.loc),
+                    loc,
                     kind: ExprKind::MutAssign {
                         target: left,
                         value: right,
@@ -360,9 +337,10 @@ impl<'data> Parser<'data> {
             TokenKind::GtGtEq => {
                 self.pop().unwrap();
                 let right = self.parse_assign()?;
-                let (right, left) = self.buckets.add((right, left));
+                let loc = l_from(left.loc, right.loc);
+                let (right, left) = (self.ast.add_expr(right), self.ast.add_expr(left));
                 return Ok(Expr {
-                    loc: l_from(left.loc, right.loc),
+                    loc,
                     kind: ExprKind::MutAssign {
                         target: left,
                         value: right,
@@ -374,9 +352,10 @@ impl<'data> Parser<'data> {
                 self.pop().unwrap();
                 self.eat_newline();
                 let right = self.parse_assign()?;
-                let (right, left) = self.buckets.add((right, left));
+                let loc = l_from(left.loc, right.loc);
+                let (right, left) = (self.ast.add_expr(right), self.ast.add_expr(left));
                 return Ok(Expr {
-                    loc: l_from(left.loc, right.loc),
+                    loc,
                     kind: ExprKind::MutAssign {
                         target: left,
                         value: right,
@@ -386,10 +365,12 @@ impl<'data> Parser<'data> {
             }
             TokenKind::CaretEq => {
                 self.pop().unwrap();
+                self.eat_newline();
                 let right = self.parse_assign()?;
-                let (right, left) = self.buckets.add((right, left));
+                let loc = l_from(left.loc, right.loc);
+                let (right, left) = (self.ast.add_expr(right), self.ast.add_expr(left));
                 return Ok(Expr {
-                    loc: l_from(left.loc, right.loc),
+                    loc,
                     kind: ExprKind::MutAssign {
                         target: left,
                         value: right,
@@ -401,9 +382,10 @@ impl<'data> Parser<'data> {
                 self.pop().unwrap();
                 self.eat_newline();
                 let right = self.parse_assign()?;
-                let (right, left) = self.buckets.add((right, left));
+                let loc = l_from(left.loc, right.loc);
+                let (right, left) = (self.ast.add_expr(right), self.ast.add_expr(left));
                 return Ok(Expr {
-                    loc: l_from(left.loc, right.loc),
+                    loc,
                     kind: ExprKind::MutAssign {
                         target: left,
                         value: right,
@@ -417,7 +399,7 @@ impl<'data> Parser<'data> {
         }
     }
 
-    pub fn parse_ternary(&mut self) -> Result<Expr<'static>, Error> {
+    pub fn parse_ternary(&mut self) -> Result<Expr, Error> {
         let condition = self.parse_bool_or()?;
 
         let question_tok = match self.peek() {
@@ -446,12 +428,13 @@ impl<'data> Parser<'data> {
         self.eat_newline();
         let if_false = self.parse_bool_or()?;
 
-        let condition = self.buckets.add(condition);
-        let if_true = self.buckets.add(if_true);
-        let if_false = self.buckets.add(if_false);
+        let loc = l_from(condition.loc, if_false.loc);
+        let condition = self.ast.add_expr(condition);
+        let if_true = self.ast.add_expr(if_true);
+        let if_false = self.ast.add_expr(if_false);
 
         return Ok(Expr {
-            loc: l_from(condition.loc, if_false.loc),
+            loc,
             kind: ExprKind::Ternary {
                 condition,
                 if_true,
@@ -460,7 +443,7 @@ impl<'data> Parser<'data> {
         });
     }
 
-    pub fn parse_bool_or(&mut self) -> Result<Expr<'static>, Error> {
+    pub fn parse_bool_or(&mut self) -> Result<Expr, Error> {
         let mut expr = self.parse_bool_and()?;
         while let Some(tok) = self.peek() {
             let start_loc = expr.loc;
@@ -471,8 +454,8 @@ impl<'data> Parser<'data> {
 
                     let right = self.parse_bool_and()?;
                     let end_loc = right.loc;
-                    let left = self.buckets.add(expr);
-                    let right = self.buckets.add(right);
+                    let left = self.ast.add_expr(expr);
+                    let right = self.ast.add_expr(right);
 
                     expr = Expr {
                         kind: ExprKind::BinOp(BinOp::BoolOr, left, right),
@@ -486,7 +469,7 @@ impl<'data> Parser<'data> {
         return Ok(expr);
     }
 
-    pub fn parse_bool_and(&mut self) -> Result<Expr<'static>, Error> {
+    pub fn parse_bool_and(&mut self) -> Result<Expr, Error> {
         let mut expr = self.parse_bit_or()?;
         while let Some(tok) = self.peek() {
             let start_loc = expr.loc;
@@ -497,8 +480,8 @@ impl<'data> Parser<'data> {
 
                     let right = self.parse_bit_or()?;
                     let end_loc = right.loc;
-                    let left = self.buckets.add(expr);
-                    let right = self.buckets.add(right);
+                    let left = self.ast.add_expr(expr);
+                    let right = self.ast.add_expr(right);
 
                     expr = Expr {
                         kind: ExprKind::BinOp(BinOp::BoolAnd, left, right),
@@ -512,7 +495,7 @@ impl<'data> Parser<'data> {
         return Ok(expr);
     }
 
-    pub fn parse_bit_or(&mut self) -> Result<Expr<'static>, Error> {
+    pub fn parse_bit_or(&mut self) -> Result<Expr, Error> {
         let mut expr = self.parse_bit_xor()?;
         while let Some(tok) = self.peek() {
             let start_loc = expr.loc;
@@ -523,8 +506,8 @@ impl<'data> Parser<'data> {
 
                     let right = self.parse_bit_xor()?;
                     let end_loc = right.loc;
-                    let left = self.buckets.add(expr);
-                    let right = self.buckets.add(right);
+                    let left = self.ast.add_expr(expr);
+                    let right = self.ast.add_expr(right);
 
                     expr = Expr {
                         kind: ExprKind::BinOp(BinOp::BitOr, left, right),
@@ -538,7 +521,7 @@ impl<'data> Parser<'data> {
         return Ok(expr);
     }
 
-    pub fn parse_bit_xor(&mut self) -> Result<Expr<'static>, Error> {
+    pub fn parse_bit_xor(&mut self) -> Result<Expr, Error> {
         let mut expr = self.parse_bit_and()?;
         while let Some(tok) = self.peek() {
             let start_loc = expr.loc;
@@ -549,8 +532,8 @@ impl<'data> Parser<'data> {
 
                     let right = self.parse_bit_and()?;
                     let end_loc = right.loc;
-                    let left = self.buckets.add(expr);
-                    let right = self.buckets.add(right);
+                    let left = self.ast.add_expr(expr);
+                    let right = self.ast.add_expr(right);
 
                     expr = Expr {
                         kind: ExprKind::BinOp(BinOp::BitXor, left, right),
@@ -564,7 +547,7 @@ impl<'data> Parser<'data> {
         return Ok(expr);
     }
 
-    pub fn parse_bit_and(&mut self) -> Result<Expr<'static>, Error> {
+    pub fn parse_bit_and(&mut self) -> Result<Expr, Error> {
         let mut expr = self.parse_equality()?;
         while let Some(tok) = self.peek() {
             let start_loc = expr.loc;
@@ -575,8 +558,8 @@ impl<'data> Parser<'data> {
 
                     let right = self.parse_equality()?;
                     let end_loc = right.loc;
-                    let left = self.buckets.add(expr);
-                    let right = self.buckets.add(right);
+                    let left = self.ast.add_expr(expr);
+                    let right = self.ast.add_expr(right);
 
                     expr = Expr {
                         kind: ExprKind::BinOp(BinOp::BitAnd, left, right),
@@ -590,7 +573,7 @@ impl<'data> Parser<'data> {
         return Ok(expr);
     }
 
-    pub fn parse_equality(&mut self) -> Result<Expr<'static>, Error> {
+    pub fn parse_equality(&mut self) -> Result<Expr, Error> {
         let mut expr = self.parse_comparison()?;
         while let Some(tok) = self.peek() {
             let start_loc = expr.loc;
@@ -601,8 +584,8 @@ impl<'data> Parser<'data> {
 
                     let right = self.parse_comparison()?;
                     let end_loc = right.loc;
-                    let left = self.buckets.add(expr);
-                    let right = self.buckets.add(right);
+                    let left = self.ast.add_expr(expr);
+                    let right = self.ast.add_expr(right);
 
                     expr = Expr {
                         kind: ExprKind::BinOp(BinOp::Eq, left, right),
@@ -615,8 +598,8 @@ impl<'data> Parser<'data> {
 
                     let right = self.parse_comparison()?;
                     let end_loc = right.loc;
-                    let left = self.buckets.add(expr);
-                    let right = self.buckets.add(right);
+                    let left = self.ast.add_expr(expr);
+                    let right = self.ast.add_expr(right);
 
                     expr = Expr {
                         kind: ExprKind::BinOp(BinOp::Neq, left, right),
@@ -630,7 +613,7 @@ impl<'data> Parser<'data> {
         return Ok(expr);
     }
 
-    pub fn parse_comparison(&mut self) -> Result<Expr<'static>, Error> {
+    pub fn parse_comparison(&mut self) -> Result<Expr, Error> {
         let mut expr = self.parse_shift()?;
 
         while let Some(tok) = self.peek() {
@@ -642,8 +625,8 @@ impl<'data> Parser<'data> {
 
                     let right = self.parse_shift()?;
                     let end_loc = right.loc;
-                    let left = self.buckets.add(expr);
-                    let right = self.buckets.add(right);
+                    let left = self.ast.add_expr(expr);
+                    let right = self.ast.add_expr(right);
 
                     expr = Expr {
                         kind: ExprKind::BinOp(BinOp::Lt, left, right),
@@ -655,8 +638,8 @@ impl<'data> Parser<'data> {
 
                     let right = self.parse_shift()?;
                     let end_loc = right.loc;
-                    let left = self.buckets.add(expr);
-                    let right = self.buckets.add(right);
+                    let left = self.ast.add_expr(expr);
+                    let right = self.ast.add_expr(right);
 
                     expr = Expr {
                         kind: ExprKind::BinOp(BinOp::Leq, left, right),
@@ -669,8 +652,8 @@ impl<'data> Parser<'data> {
 
                     let right = self.parse_shift()?;
                     let end_loc = right.loc;
-                    let left = self.buckets.add(expr);
-                    let right = self.buckets.add(right);
+                    let left = self.ast.add_expr(expr);
+                    let right = self.ast.add_expr(right);
 
                     expr = Expr {
                         kind: ExprKind::BinOp(BinOp::Gt, left, right),
@@ -683,8 +666,8 @@ impl<'data> Parser<'data> {
 
                     let right = self.parse_shift()?;
                     let end_loc = right.loc;
-                    let left = self.buckets.add(expr);
-                    let right = self.buckets.add(right);
+                    let left = self.ast.add_expr(expr);
+                    let right = self.ast.add_expr(right);
 
                     expr = Expr {
                         kind: ExprKind::BinOp(BinOp::Geq, left, right),
@@ -698,7 +681,7 @@ impl<'data> Parser<'data> {
         return Ok(expr);
     }
 
-    pub fn parse_shift(&mut self) -> Result<Expr<'static>, Error> {
+    pub fn parse_shift(&mut self) -> Result<Expr, Error> {
         let mut expr = self.parse_add()?;
         while let Some(tok) = self.peek() {
             let start_loc = expr.loc;
@@ -709,8 +692,8 @@ impl<'data> Parser<'data> {
 
                     let right = self.parse_add()?;
                     let end_loc = right.loc;
-                    let left = self.buckets.add(expr);
-                    let right = self.buckets.add(right);
+                    let left = self.ast.add_expr(expr);
+                    let right = self.ast.add_expr(right);
 
                     expr = Expr {
                         kind: ExprKind::BinOp(BinOp::RShift, left, right),
@@ -723,8 +706,8 @@ impl<'data> Parser<'data> {
 
                     let right = self.parse_add()?;
                     let end_loc = right.loc;
-                    let left = self.buckets.add(expr);
-                    let right = self.buckets.add(right);
+                    let left = self.ast.add_expr(expr);
+                    let right = self.ast.add_expr(right);
 
                     expr = Expr {
                         kind: ExprKind::BinOp(BinOp::LShift, left, right),
@@ -738,7 +721,7 @@ impl<'data> Parser<'data> {
         return Ok(expr);
     }
 
-    pub fn parse_add(&mut self) -> Result<Expr<'static>, Error> {
+    pub fn parse_add(&mut self) -> Result<Expr, Error> {
         let mut expr = self.parse_multiply()?;
 
         while let Some(tok) = self.peek() {
@@ -750,8 +733,8 @@ impl<'data> Parser<'data> {
 
                     let right = self.parse_multiply()?;
                     let end_loc = right.loc;
-                    let left = self.buckets.add(expr);
-                    let right = self.buckets.add(right);
+                    let left = self.ast.add_expr(expr);
+                    let right = self.ast.add_expr(right);
 
                     expr = Expr {
                         kind: ExprKind::BinOp(BinOp::Add, left, right),
@@ -764,8 +747,8 @@ impl<'data> Parser<'data> {
 
                     let right = self.parse_multiply()?;
                     let end_loc = right.loc;
-                    let left = self.buckets.add(expr);
-                    let right = self.buckets.add(right);
+                    let left = self.ast.add_expr(expr);
+                    let right = self.ast.add_expr(right);
 
                     expr = Expr {
                         kind: ExprKind::BinOp(BinOp::Sub, left, right),
@@ -779,7 +762,7 @@ impl<'data> Parser<'data> {
         return Ok(expr);
     }
 
-    pub fn parse_multiply(&mut self) -> Result<Expr<'static>, Error> {
+    pub fn parse_multiply(&mut self) -> Result<Expr, Error> {
         let mut expr = self.parse_prefix()?;
 
         while let Some(tok) = self.peek() {
@@ -791,8 +774,8 @@ impl<'data> Parser<'data> {
 
                     let right = self.parse_prefix()?;
                     let end_loc = right.loc;
-                    let left = self.buckets.add(expr);
-                    let right = self.buckets.add(right);
+                    let left = self.ast.add_expr(expr);
+                    let right = self.ast.add_expr(right);
 
                     expr = Expr {
                         kind: ExprKind::BinOp(BinOp::Div, left, right),
@@ -805,8 +788,8 @@ impl<'data> Parser<'data> {
 
                     let right = self.parse_prefix()?;
                     let end_loc = right.loc;
-                    let left = self.buckets.add(expr);
-                    let right = self.buckets.add(right);
+                    let left = self.ast.add_expr(expr);
+                    let right = self.ast.add_expr(right);
 
                     expr = Expr {
                         kind: ExprKind::BinOp(BinOp::Mul, left, right),
@@ -819,8 +802,8 @@ impl<'data> Parser<'data> {
 
                     let right = self.parse_prefix()?;
                     let end_loc = right.loc;
-                    let left = self.buckets.add(expr);
-                    let right = self.buckets.add(right);
+                    let left = self.ast.add_expr(expr);
+                    let right = self.ast.add_expr(right);
 
                     expr = Expr {
                         kind: ExprKind::BinOp(BinOp::Mod, left, right),
@@ -834,7 +817,7 @@ impl<'data> Parser<'data> {
         return Ok(expr);
     }
 
-    pub fn parse_prefix(&mut self) -> Result<Expr<'static>, Error> {
+    pub fn parse_prefix(&mut self) -> Result<Expr, Error> {
         let tok = self.peek_err()?;
         match tok.kind {
             TokenKind::Amp => {
@@ -842,9 +825,9 @@ impl<'data> Parser<'data> {
                 self.eat_newline();
 
                 let target = self.parse_prefix()?;
-                let target = self.buckets.add(target);
+                let (loc, target) = (l_from(tok.loc, target.loc), self.ast.add_expr(target));
                 return Ok(Expr {
-                    loc: l_from(tok.loc, target.loc),
+                    loc,
                     kind: ExprKind::UnaryOp(UnaryOp::Ref, target),
                 });
             }
@@ -853,9 +836,9 @@ impl<'data> Parser<'data> {
                 self.eat_newline();
 
                 let target = self.parse_prefix()?;
-                let target = self.buckets.add(target);
+                let (loc, target) = (l_from(tok.loc, target.loc), self.ast.add_expr(target));
                 return Ok(Expr {
-                    loc: l_from(tok.loc, target.loc),
+                    loc,
                     kind: ExprKind::UnaryOp(UnaryOp::Deref, target),
                 });
             }
@@ -865,9 +848,9 @@ impl<'data> Parser<'data> {
                 self.eat_newline();
 
                 let target = self.parse_prefix()?;
-                let target = self.buckets.add(target);
+                let (loc, target) = (l_from(tok.loc, target.loc), self.ast.add_expr(target));
                 return Ok(Expr {
-                    loc: l_from(tok.loc, target.loc),
+                    loc,
                     kind: ExprKind::UnaryOp(UnaryOp::BoolNot, target),
                 });
             }
@@ -876,9 +859,9 @@ impl<'data> Parser<'data> {
                 self.eat_newline();
 
                 let target = self.parse_prefix()?;
-                let target = self.buckets.add(target);
+                let (loc, target) = (l_from(tok.loc, target.loc), self.ast.add_expr(target));
                 return Ok(Expr {
-                    loc: l_from(tok.loc, target.loc),
+                    loc,
                     kind: ExprKind::UnaryOp(UnaryOp::BitNot, target),
                 });
             }
@@ -887,9 +870,9 @@ impl<'data> Parser<'data> {
                 self.eat_newline();
 
                 let target = self.parse_prefix()?;
-                let target = self.buckets.add(target);
+                let (loc, target) = (l_from(tok.loc, target.loc), self.ast.add_expr(target));
                 return Ok(Expr {
-                    loc: l_from(tok.loc, target.loc),
+                    loc,
                     kind: ExprKind::UnaryOp(UnaryOp::Neg, target),
                 });
             }
@@ -898,7 +881,7 @@ impl<'data> Parser<'data> {
         }
     }
 
-    pub fn parse_range(&mut self) -> Result<Expr<'static>, Error> {
+    pub fn parse_range(&mut self) -> Result<Expr, Error> {
         let start = self.parse_postfix()?;
 
         let tok = match self.peek() {
@@ -913,8 +896,8 @@ impl<'data> Parser<'data> {
         self.pop().unwrap();
 
         let end = self.parse_postfix()?;
-        let (start, end) = self.buckets.add((start, end));
         let loc = l_from(start.loc, end.loc);
+        let (start, end) = (self.ast.add_expr(start), self.ast.add_expr(end));
 
         #[rustfmt::skip]
         let range = Expr { loc, kind: ExprKind::Range(Some(start), Some(end)), };
@@ -931,7 +914,7 @@ impl<'data> Parser<'data> {
         return Ok(range);
     }
 
-    pub fn parse_postfix(&mut self) -> Result<Expr<'static>, Error> {
+    pub fn parse_postfix(&mut self) -> Result<Expr, Error> {
         let mut operand = self.parse_atom()?;
         let start_loc = operand.loc;
 
@@ -967,24 +950,24 @@ impl<'data> Parser<'data> {
                     }
 
                     let end_loc = self.pop().unwrap().loc;
-                    let params = self.buckets.add_array(params);
+                    let params = self.ast.add_exprs(params);
                     operand = Expr {
                         loc: l_from(start_loc, end_loc),
                         kind: ExprKind::Call {
-                            function: self.buckets.add(operand),
+                            function: self.ast.add_expr(operand),
                             params,
                         },
                     };
                 }
                 TokenKind::PlusPlus => {
                     operand = Expr {
-                        kind: ExprKind::UnaryOp(UnaryOp::PostIncr, self.buckets.add(operand)),
+                        kind: ExprKind::UnaryOp(UnaryOp::PostIncr, self.ast.add_expr(operand)),
                         loc: l_from(start_loc, self.pop().unwrap().loc),
                     };
                 }
                 TokenKind::DashDash => {
                     operand = Expr {
-                        kind: ExprKind::UnaryOp(UnaryOp::PostDecr, self.buckets.add(operand)),
+                        kind: ExprKind::UnaryOp(UnaryOp::PostDecr, self.ast.add_expr(operand)),
                         loc: l_from(start_loc, self.pop_err()?.loc),
                     };
                 }
@@ -1001,8 +984,8 @@ impl<'data> Parser<'data> {
                     operand = Expr {
                         kind: ExprKind::BinOp(
                             BinOp::Index,
-                            self.buckets.add(operand),
-                            self.buckets.add(index),
+                            self.ast.add_expr(operand),
+                            self.ast.add_expr(index),
                         ),
                         loc,
                     };
@@ -1015,7 +998,7 @@ impl<'data> Parser<'data> {
                     if let TokenKind::Ident(member) = ident_tok.kind {
                         operand = Expr {
                             kind: ExprKind::Member {
-                                base: self.buckets.add(operand),
+                                base: self.ast.add_expr(operand),
                                 member,
                             },
                             loc: l_from(start_loc, ident_tok.loc),
@@ -1033,7 +1016,7 @@ impl<'data> Parser<'data> {
         return Ok(operand);
     }
 
-    pub fn parse_atom(&mut self) -> Result<Expr<'static>, Error> {
+    pub fn parse_atom(&mut self) -> Result<Expr, Error> {
         let tok = self.pop_err()?;
         match tok.kind {
             TokenKind::Null => {
@@ -1065,16 +1048,17 @@ impl<'data> Parser<'data> {
                 }
 
                 return Ok(Expr {
-                    kind: ExprKind::StringLit(self.buckets.add_str(&string)),
+                    kind: ExprKind::StringLit(self.ast.add_str(string)),
                     loc: l_from(tok.loc, end_loc),
                 });
             }
             TokenKind::New => {
                 self.eat_newline();
                 let ty = self.parse_type()?;
+                let (loc, ty) = (l_from(tok.loc, ty.loc), self.ast.add_ty(ty));
                 return Ok(Expr {
                     kind: ExprKind::New(ty),
-                    loc: l_from(tok.loc, ty.loc),
+                    loc,
                 });
             }
             TokenKind::Struct => {
@@ -1094,7 +1078,7 @@ impl<'data> Parser<'data> {
 
                         let tok = self.expect_tok(TokenKind::RBrace, "expected '}' token")?;
 
-                        let stmts = self.buckets.add_array(stmts);
+                        let stmts = self.ast.add_stmts(stmts);
                         return Ok(Expr {
                             kind: ExprKind::Struct(stmts),
                             loc: l_from(start, tok.loc),
@@ -1102,9 +1086,10 @@ impl<'data> Parser<'data> {
                     }
                     _ => {
                         let ty = self.parse_type()?;
+                        let (loc, ty) = (l_from(tok.loc, ty.loc), self.ast.add_ty(ty));
                         return Ok(Expr {
                             kind: ExprKind::UnitStruct(ty),
-                            loc: l_from(start, tok.loc),
+                            loc,
                         });
                     }
                 }
@@ -1129,7 +1114,7 @@ impl<'data> Parser<'data> {
                 return Ok(Expr {
                     kind: ExprKind::List {
                         ty: None,
-                        values: self.buckets.add_array(expr_list),
+                        values: self.ast.add_exprs(expr_list),
                     },
                     loc: l_from(start_loc, end.loc),
                 });
@@ -1194,8 +1179,8 @@ impl<'data> Parser<'data> {
                 return Ok(Expr {
                     loc: l_from(tok.loc, expr.loc),
                     kind: ExprKind::Function {
-                        params: self.buckets.add_array(params),
-                        body: self.buckets.add(expr),
+                        params: self.ast.add_params(params),
+                        body: self.ast.add_expr(expr),
                     },
                 });
             }
@@ -1214,7 +1199,7 @@ impl<'data> Parser<'data> {
 
                 let tok = self.expect_tok(TokenKind::RBrace, "expected '}' token")?;
 
-                let stmts = self.buckets.add_array(stmts);
+                let stmts = self.ast.add_stmts(stmts);
                 return Ok(Expr {
                     kind: ExprKind::Block(stmts),
                     loc: l_from(start, tok.loc),
@@ -1224,7 +1209,7 @@ impl<'data> Parser<'data> {
         }
     }
 
-    pub fn parse_type(&mut self) -> Result<Type<'static>, Error> {
+    pub fn parse_type(&mut self) -> Result<Type, Error> {
         let mut modifiers = Vec::new();
         let mut tok = self.pop_err()?;
         let mut loc = tok.loc;
@@ -1243,16 +1228,16 @@ impl<'data> Parser<'data> {
                                     modifiers.push(TypeModifier::Slice);
                                 } else {
                                     let expr = self.parse_expr()?;
-                                    modifiers.push(TypeModifier::Array(self.buckets.add(expr)));
+                                    modifiers.push(TypeModifier::Array(self.ast.add_expr(expr)));
                                 }
                             } else {
                                 let expr = self.parse_expr()?;
-                                modifiers.push(TypeModifier::Array(self.buckets.add(expr)));
+                                modifiers.push(TypeModifier::Array(self.ast.add_expr(expr)));
                             }
                         }
                         _ => {
                             let expr = self.parse_expr()?;
-                            modifiers.push(TypeModifier::Array(self.buckets.add(expr)));
+                            modifiers.push(TypeModifier::Array(self.ast.add_expr(expr)));
                         }
                     }
 
@@ -1260,7 +1245,7 @@ impl<'data> Parser<'data> {
                 }
 
                 TokenKind::String => {
-                    let modifiers = self.buckets.add_array(modifiers);
+                    let modifiers = self.ast.add_ty_mods(modifiers);
                     return Ok(Type {
                         modifiers,
                         base: TypeBase::String,
@@ -1268,7 +1253,7 @@ impl<'data> Parser<'data> {
                     });
                 }
                 TokenKind::U64 => {
-                    let modifiers = self.buckets.add_array(modifiers);
+                    let modifiers = self.ast.add_ty_mods(modifiers);
                     return Ok(Type {
                         modifiers,
                         base: TypeBase::U64,
@@ -1276,7 +1261,7 @@ impl<'data> Parser<'data> {
                     });
                 }
                 TokenKind::Any => {
-                    let modifiers = self.buckets.add_array(modifiers);
+                    let modifiers = self.ast.add_ty_mods(modifiers);
                     return Ok(Type {
                         modifiers,
                         base: TypeBase::Any,
@@ -1284,7 +1269,7 @@ impl<'data> Parser<'data> {
                     });
                 }
                 TokenKind::Ident(id) => {
-                    let modifiers = self.buckets.add_array(modifiers);
+                    let modifiers = self.ast.add_ty_mods(modifiers);
                     return Ok(Type {
                         modifiers,
                         base: TypeBase::Named(id),
@@ -1306,7 +1291,7 @@ impl<'data> Parser<'data> {
             info: "expected another token after this one",
             message: None,
             loc: self.tokens[self.current - 1].loc,
-            file: self.file,
+            file: self.ast.file,
         });
     }
 
@@ -1370,7 +1355,7 @@ impl<'data> Parser<'data> {
             info,
             message: None,
             loc,
-            file: self.file,
+            file: self.ast.file,
         };
     }
 }

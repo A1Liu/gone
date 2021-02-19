@@ -1,13 +1,11 @@
 debug := (text: string) => print(text)
 
-*i = 12
-
 hello_outer := "Hello, "
 world := "world!"
 
 main := (hello: string) string => {
   for hello print(it)
-  for idx in 0...len(world) print(world[idx])
+  for idx in 0...len(world) debug(world[idx])
   print("\n")
 }
 

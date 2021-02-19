@@ -9,6 +9,8 @@ mod buckets;
 mod filedb;
 mod lexer;
 mod parser;
+mod tc_ast;
+mod type_checker;
 mod util;
 
 #[cfg(test)]
@@ -32,7 +34,6 @@ fn compile(files: &FileDb) -> Result<(), Vec<Error>> {
                 continue;
             }
         };
-        println!("{:#?}", ast.block());
         asts.push(ast);
     }
 

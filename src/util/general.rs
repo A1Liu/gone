@@ -110,17 +110,25 @@ pub fn register_output(f: impl Fn(String) + 'static) {
     unsafe { core::ptr::write_volatile(out, Some(mem::transmute(value))) };
 }
 
-pub const NO_FILE: usize = !0;
+pub const NO_FILE: u32 = !0;
+pub type CodeLoc = Range<usize>;
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq)]
-pub struct CodeLoc {
-    pub start: usize,
-    pub end: usize,
+pub struct Range<T: Copy> {
+    pub start: T,
+    pub end: T,
 }
 
-impl fmt::Debug for CodeLoc {
+pub fn r<T: Copy>(start: T, end: T) -> Range<T> {
+    Range { start, end }
+}
+
+impl<T: Copy> fmt::Debug for Range<T>
+where
+    T: fmt::Debug,
+{
     fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        write!(fmt, "({},{})", self.start, self.end)
+        write!(fmt, "({:?},{:?})", self.start, self.end)
     }
 }
 

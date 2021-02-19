@@ -1,5 +1,102 @@
 use crate::util::*;
 
+#[derive(Debug, Clone, Copy)]
+pub struct StrIdx(u32);
+#[derive(Debug, Clone, Copy)]
+pub struct ParamIdx(u32);
+#[derive(Debug, Clone, Copy)]
+pub struct IdentIdx(u32);
+#[derive(Debug, Clone, Copy)]
+pub struct ExprIdx(u32);
+#[derive(Debug, Clone, Copy)]
+pub struct StmtIdx(u32);
+#[derive(Debug, Clone, Copy)]
+pub struct TypeModIdx(u32);
+#[derive(Debug, Clone, Copy)]
+pub struct TypeIdx(u32);
+
+pub struct Ast {
+    pub file: u32,
+    pub strings: StringArray<()>,
+    pub params: Vec<(Decl, CodeLoc)>,
+    pub idents: Vec<u32>,
+    pub exprs: Vec<Expr>,
+    pub stmts: Vec<Stmt>,
+    pub ty_mods: Vec<TypeModifier>,
+    pub tys: Vec<Type>,
+    pub globals: Range<StmtIdx>,
+}
+
+impl Ast {
+    pub fn new(file: u32) -> Self {
+        Self {
+            file,
+            strings: StringArray::new(),
+            params: Vec::new(),
+            idents: Vec::new(),
+            exprs: Vec::new(),
+            stmts: Vec::new(),
+            ty_mods: Vec::new(),
+            tys: Vec::new(),
+            globals: r(StmtIdx(0), StmtIdx(0)),
+        }
+    }
+
+    pub fn add_str(&mut self, string: String) -> StrIdx {
+        let idx = self.strings.len() as u32;
+        self.strings.push((), &string);
+        return StrIdx(idx);
+    }
+
+    pub fn add_expr(&mut self, expr: Expr) -> ExprIdx {
+        let idx = self.exprs.len() as u32;
+        self.exprs.push(expr);
+        return ExprIdx(idx);
+    }
+
+    pub fn add_stmt(&mut self, stmt: Stmt) -> StmtIdx {
+        let idx = self.stmts.len() as u32;
+        self.stmts.push(stmt);
+        return StmtIdx(idx);
+    }
+
+    pub fn add_ty(&mut self, ty: Type) -> TypeIdx {
+        let idx = self.tys.len() as u32;
+        self.tys.push(ty);
+        return TypeIdx(idx);
+    }
+
+    pub fn add_stmts(&mut self, mut stmts: Vec<Stmt>) -> Range<StmtIdx> {
+        let begin = StmtIdx(self.stmts.len() as u32);
+        self.stmts.append(&mut stmts);
+        return r(begin, StmtIdx(self.stmts.len() as u32));
+    }
+
+    pub fn add_exprs(&mut self, mut exprs: Vec<Expr>) -> Range<ExprIdx> {
+        let begin = ExprIdx(self.exprs.len() as u32);
+        self.exprs.append(&mut exprs);
+        return r(begin, ExprIdx(self.exprs.len() as u32));
+    }
+
+    pub fn add_idents(&mut self, mut idents: Vec<u32>) -> Range<IdentIdx> {
+        let begin = IdentIdx(self.idents.len() as u32);
+        self.idents.append(&mut idents);
+        return r(begin, IdentIdx(self.idents.len() as u32));
+    }
+
+    pub fn add_ty_mods(&mut self, mut ty_mods: Vec<TypeModifier>) -> Range<TypeModIdx> {
+        let begin = TypeModIdx(self.ty_mods.len() as u32);
+        self.ty_mods.append(&mut ty_mods);
+        return r(begin, TypeModIdx(self.ty_mods.len() as u32));
+    }
+
+    pub fn add_params(&mut self, mut params: Vec<(Decl, CodeLoc)>) -> Range<ParamIdx> {
+        let begin = ParamIdx(self.params.len() as u32);
+        self.params.append(&mut params);
+        return r(begin, ParamIdx(self.params.len() as u32));
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Hash, Eq, Copy)]
 pub enum BinOp {
     Add,
@@ -37,121 +134,121 @@ pub enum UnaryOp {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum TypeModifier<'a> {
+pub enum TypeModifier {
     Pointer,
-    Array(&'a Expr<'a>),
+    Array(ExprIdx),
     VarArray,
     Slice,
     Varargs,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum TypeBase<'a> {
+pub enum TypeBase {
     Any,
     String,
     S64,
     U64,
     Named(u32),
     Function {
-        ret: &'a Type<'a>,
-        params: &'a [Type<'a>],
+        ret: TypeIdx,
+        params: Range<TypeIdx>,
     },
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct Type<'a> {
-    pub modifiers: &'a [TypeModifier<'a>],
-    pub base: TypeBase<'a>,
+pub struct Type {
+    pub modifiers: Range<TypeModIdx>,
+    pub base: TypeBase,
     pub loc: CodeLoc,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct Decl<'a> {
-    pub idents: &'a [u32],
-    pub ty: Option<Type<'a>>,
-    pub expr: Option<&'a Expr<'a>>,
+pub struct Decl {
+    pub idents: Range<IdentIdx>,
+    pub ty: Option<TypeIdx>,
+    pub expr: Option<ExprIdx>,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum ExprKind<'a> {
+pub enum ExprKind {
     Null,
     Ux(u64),
     // Sx(i64),
-    StringLit(&'a str),
+    StringLit(StrIdx),
     Ident(u32),
-    New(Type<'a>),
+    New(TypeIdx),
     Function {
-        params: &'a [(Decl<'a>, CodeLoc)],
-        body: &'a Expr<'a>,
+        params: Range<ParamIdx>,
+        body: ExprIdx,
     },
-    Block(&'a [Statement<'a>]),
-    Struct(&'a [Statement<'a>]),
-    UnitStruct(Type<'a>),
-    BinOp(BinOp, &'a Expr<'a>, &'a Expr<'a>),
-    Range(Option<&'a Expr<'a>>, Option<&'a Expr<'a>>),
+    Block(Range<StmtIdx>),
+    Struct(Range<StmtIdx>),
+    UnitStruct(TypeIdx),
+    BinOp(BinOp, ExprIdx, ExprIdx),
+    Range(Option<ExprIdx>, Option<ExprIdx>),
     List {
-        ty: Option<Type<'a>>,
-        values: &'a [Expr<'a>],
+        ty: Option<TypeIdx>,
+        values: Range<ExprIdx>,
     },
     Member {
         member: u32,
-        base: &'a Expr<'a>,
+        base: ExprIdx,
     },
-    UnaryOp(UnaryOp, &'a Expr<'a>),
+    UnaryOp(UnaryOp, ExprIdx),
     Call {
-        function: &'a Expr<'a>,
-        params: &'a [Expr<'a>],
+        function: ExprIdx,
+        params: Range<ExprIdx>,
     },
     Ternary {
-        condition: &'a Expr<'a>,
-        if_true: &'a Expr<'a>,
-        if_false: &'a Expr<'a>,
+        condition: ExprIdx,
+        if_true: ExprIdx,
+        if_false: ExprIdx,
     },
     Cast {
-        ty: Option<Type<'a>>,
-        expr: &'a Expr<'a>,
+        ty: Option<TypeIdx>,
+        expr: ExprIdx,
     },
-    Assign(&'a Expr<'a>, &'a Expr<'a>),
+    Assign(ExprIdx, ExprIdx),
     MutAssign {
         op: BinOp,
-        target: &'a Expr<'a>,
-        value: &'a Expr<'a>,
+        target: ExprIdx,
+        value: ExprIdx,
     },
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct Expr<'a> {
-    pub kind: ExprKind<'a>,
+pub struct Expr {
+    pub kind: ExprKind,
     pub loc: CodeLoc,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum StatementKind<'a> {
+pub enum StmtKind {
     Noop,
-    Expr(ExprKind<'a>),
-    Decl(Decl<'a>),
+    Expr(ExprKind),
+    Decl(Decl),
     Ret,
-    RetVal(Expr<'a>),
+    RetVal(ExprIdx),
     Branch {
-        if_cond: Expr<'a>,
-        if_body: &'a Statement<'a>,
-        else_body: Option<&'a Statement<'a>>,
+        if_cond: ExprIdx,
+        if_body: StmtIdx,
+        else_body: Option<StmtIdx>,
     },
     For {
-        iter: Expr<'a>,
-        source: Expr<'a>,
-        body: &'a Statement<'a>,
+        iter: ExprIdx,
+        source: ExprIdx,
+        body: StmtIdx,
     },
     While {
-        condition: Option<Expr<'a>>,
-        body: &'a Statement<'a>,
+        condition: Option<ExprIdx>,
+        body: StmtIdx,
     },
     Break,
     Continue,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct Statement<'a> {
-    pub kind: StatementKind<'a>,
+pub struct Stmt {
+    pub kind: StmtKind,
     pub loc: CodeLoc,
 }
