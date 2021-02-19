@@ -109,7 +109,7 @@ macro_rules! gen_test_should_succeed {
 //     };
 // }
 
-gen_test_should_succeed!(hello_world);
+gen_test_should_succeed!(hello_world, structs);
 
 // gen_test_runtime_should_fail!((stack_locals, "InvalidPointer"));
 //

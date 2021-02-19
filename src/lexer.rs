@@ -9,9 +9,12 @@ pub enum TokenKind<'a> {
     UxLit(u64),
     StringLit(&'a IStr),
     CharLit([u8; 4]),
+    Null,
+
     Error(&'a IStr),
 
     Struct,
+    String,
     U64,
     S64,
     Any,
@@ -24,6 +27,7 @@ pub enum TokenKind<'a> {
     Continue,
     Return,
     In,
+    New,
 
     Dot,
     DotDotDot,
@@ -117,9 +121,12 @@ lazy_static! {
         set.insert("in", TokenKind::In);
 
         set.insert("struct", TokenKind::Struct);
+        set.insert("string", TokenKind::String);
         set.insert("u64", TokenKind::U64);
         set.insert("s64", TokenKind::S64);
         set.insert("any", TokenKind::Any);
+
+        set.insert("null", TokenKind::Null);
 
         set
     };

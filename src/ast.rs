@@ -37,9 +37,9 @@ pub enum UnaryOp {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum TypeModifier {
+pub enum TypeModifier<'a> {
     Pointer,
-    Array(u64),
+    Array(&'a Expr<'a>),
     VarArray,
     Slice,
     Varargs,
@@ -48,6 +48,7 @@ pub enum TypeModifier {
 #[derive(Debug, Clone, Copy)]
 pub enum TypeBase<'a> {
     Any,
+    String,
     S64,
     U64,
     Named(u32),
@@ -59,7 +60,7 @@ pub enum TypeBase<'a> {
 
 #[derive(Debug, Clone, Copy)]
 pub struct Type<'a> {
-    pub modifiers: &'a [TypeModifier],
+    pub modifiers: &'a [TypeModifier<'a>],
     pub base: TypeBase<'a>,
     pub loc: CodeLoc,
 }
@@ -73,15 +74,19 @@ pub struct Decl<'a> {
 
 #[derive(Debug, Clone, Copy)]
 pub enum ExprKind<'a> {
+    Null,
     Ux(u64),
     // Sx(i64),
     StringLit(&'a str),
     Ident(u32),
+    New(Type<'a>),
     Function {
         params: &'a [(Decl<'a>, CodeLoc)],
         body: &'a Expr<'a>,
     },
     Block(&'a [Statement<'a>]),
+    Struct(&'a [Statement<'a>]),
+    UnitStruct(Type<'a>),
     BinOp(BinOp, &'a Expr<'a>, &'a Expr<'a>),
     Range(Option<&'a Expr<'a>>, Option<&'a Expr<'a>>),
     List {
