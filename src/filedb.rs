@@ -131,17 +131,9 @@ impl FileDb {
         }
     }
 
-    pub fn impls(&self) -> Vec<u32> {
-        let mut out = Vec::with_capacity(self.files.len());
-        for (idx, file) in self.files.iter().enumerate() {
-            if let FileType::Header = file.ty {
-                continue;
-            }
-
-            out.push(idx as u32);
-        }
-
-        return out;
+    pub fn file_ids(&self) -> core::ops::Range<u32> {
+        let len = self.files.len() as u32;
+        return 0..len;
     }
 
     /// Add a file to the database, returning the handle that can be used to
@@ -295,6 +287,7 @@ impl Drop for Symbols {
 pub enum BuiltinSymbol {
     Main = 0,
     It,
+    Underscore,
 }
 
 impl Symbols {
@@ -308,6 +301,7 @@ impl Symbols {
         new_self.add_str("main");
 
         new_self.add_str("it");
+        new_self.add_str("_");
 
         new_self
     }

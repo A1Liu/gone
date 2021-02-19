@@ -21,6 +21,7 @@ pub enum BinOp {
     BitOr,
     BoolAnd,
     BoolOr,
+    Range,
 }
 
 #[derive(Debug, Clone, PartialEq, Hash, Eq, Copy)]
@@ -37,39 +38,10 @@ pub enum UnaryOp {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum ExprKind<'a> {
-    U64(u64),
-    S64(i64),
-    StringLit(&'a str),
-    Ident(u32),
-    BinOp(BinOp, &'a Expr<'a>, &'a Expr<'a>),
-    Member {
-        member: u32,
-        base: &'a Expr<'a>,
-    },
-    UnaryOp(UnaryOp, &'a Expr<'a>),
-    Call {
-        function: &'a Expr<'a>,
-        params: &'a [Expr<'a>],
-    },
-    Ternary {
-        condition: &'a Expr<'a>,
-        if_true: &'a Expr<'a>,
-        if_false: &'a Expr<'a>,
-    },
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct Expr<'a> {
-    pub kind: ExprKind<'a>,
-    pub loc: CodeLoc,
-}
-
-#[derive(Debug, Clone, Copy)]
 pub enum TypeModifier {
     Pointer,
     Array(u64),
-    VariableArray,
+    List,
     Slice,
     Varargs,
 }
@@ -94,14 +66,58 @@ pub struct Type<'a> {
 
 #[derive(Debug, Clone, Copy)]
 pub struct Decl<'a> {
-    pub ident: u32,
+    pub idents: &'a [u32],
     pub ty: Option<Type<'a>>,
-    pub expr: Expr<'a>,
+    pub expr: &'a Expr<'a>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum ExprKind<'a> {
+    Ux(u64),
+    // Sx(i64),
+    StringLit(&'a str),
+    Ident(u32),
+    BinOp(BinOp, &'a Expr<'a>, &'a Expr<'a>),
+    List {
+        ty: Option<Type<'a>>,
+        values: &'a [Expr<'a>],
+    },
+    Member {
+        member: u32,
+        base: &'a Expr<'a>,
+    },
+    UnaryOp(UnaryOp, &'a Expr<'a>),
+    Call {
+        function: &'a Expr<'a>,
+        params: &'a [Expr<'a>],
+    },
+    Ternary {
+        condition: &'a Expr<'a>,
+        if_true: &'a Expr<'a>,
+        if_false: &'a Expr<'a>,
+    },
+    Cast {
+        ty: Option<Type<'a>>,
+        expr: &'a Expr<'a>,
+    },
+    Decl(Decl<'a>),
+    Assign(&'a Expr<'a>, &'a Expr<'a>),
+    MutAssign {
+        op: BinOp,
+        target: &'a Expr<'a>,
+        value: &'a Expr<'a>,
+    },
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Expr<'a> {
+    pub kind: ExprKind<'a>,
+    pub loc: CodeLoc,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub enum StatementKind<'a> {
-    Expr(Expr<'a>),
+    Expr(ExprKind<'a>),
     Ret,
     RetVal(Expr<'a>),
     Branch {
@@ -111,22 +127,13 @@ pub enum StatementKind<'a> {
     },
     Block(&'a [Statement<'a>]),
     For {
-        iter: u32,
-        by_pointer: Expr<'a>,
+        iter: Expr<'a>,
         source: Expr<'a>,
+        body: &'a Statement<'a>,
     },
     While {
         condition: Option<Expr<'a>>,
         body: &'a Statement<'a>,
-    },
-    Assign {
-        ident: u32,
-        value: Expr<'a>,
-    },
-    MutAssign {
-        ident: u32,
-        op: BinOp,
-        value: Expr<'a>,
     },
     Break,
     Continue,

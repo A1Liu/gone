@@ -6,7 +6,7 @@ use core::marker::PhantomData;
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum TokenKind<'a> {
     Ident(u32),
-    U64Lit(u64),
+    UxLit(u64),
     StringLit(&'a IStr),
     CharLit([u8; 4]),
     Error(&'a IStr),
@@ -23,10 +23,10 @@ pub enum TokenKind<'a> {
     Break,
     Continue,
     Return,
+    In,
 
     Dot,
-    DotDot,
-    Arrow,
+    DotDotDot,
     Bang,
     Question,
     Tilde,
@@ -75,6 +75,7 @@ pub enum TokenKind<'a> {
     Comma,
 }
 
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub struct Token<'a> {
     pub kind: TokenKind<'a>,
     pub loc: CodeLoc,
@@ -111,6 +112,7 @@ lazy_static! {
         set.insert("if", TokenKind::If);
         set.insert("else", TokenKind::Else);
         set.insert("return", TokenKind::Return);
+        set.insert("in", TokenKind::In);
 
         set.insert("struct", TokenKind::Struct);
         set.insert("u64", TokenKind::U64);
@@ -240,7 +242,7 @@ impl<'input, 'lexer, 'output> Iterator for Lexing<'input, 'lexer, 'output> {
                     self.current += 1;
                 }
 
-                ret!(TokenKind::U64Lit(num));
+                ret!(TokenKind::UxLit(num));
             }
 
             b'\"' => {
@@ -271,7 +273,12 @@ impl<'input, 'lexer, 'output> Iterator for Lexing<'input, 'lexer, 'output> {
 
             b'.' => {
                 if self.peek_eq(b'.') {
-                    incr_ret!(TokenKind::DotDot);
+                    self.current += 1;
+                    if self.peek_eq(b'.') {
+                        incr_ret!(TokenKind::DotDotDot);
+                    }
+
+                    err_ret!("'..' is invalid. Is '...' what you meant?");
                 }
 
                 ret!(TokenKind::Dot);
@@ -290,8 +297,6 @@ impl<'input, 'lexer, 'output> Iterator for Lexing<'input, 'lexer, 'output> {
                     incr_ret!(TokenKind::DashDash);
                 } else if self.peek_eq(b'=') {
                     incr_ret!(TokenKind::DashEq);
-                } else if self.peek_eq(b'>') {
-                    incr_ret!(TokenKind::Arrow);
                 } else {
                     ret!(TokenKind::Dash);
                 }

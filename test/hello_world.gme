@@ -1,0 +1,6 @@
+hello := "Hello, ";
+world := "world!";
+
+for hello print(it);
+for idx in 0...len(world) print(world[idx]);
+print("\n");
