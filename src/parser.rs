@@ -113,9 +113,11 @@ impl<'data> Parser<'data> {
                 let expr = self.parse_expr()?;
                 self.eat_line_ending();
 
+                let (loc, expr) = (expr.loc, self.ast.add_expr(expr));
+
                 return Ok(Stmt {
-                    kind: StmtKind::Expr(expr.kind),
-                    loc: expr.loc,
+                    kind: StmtKind::Expr(expr),
+                    loc,
                 });
             }
         }
@@ -985,7 +987,6 @@ impl<'data> Parser<'data> {
                 expr_list.push(expr);
 
                 let kind = ExprKind::List {
-                    ty: None,
                     values: self.ast.add_exprs(expr_list),
                 };
                 return Ok(e(kind, l_from(start_loc, end.loc)));

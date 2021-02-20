@@ -1,5 +1,5 @@
 use core::marker::PhantomData;
-use core::ops::Deref;
+use core::ops::{Deref, DerefMut};
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
 use core::{cmp, fmt, mem, ptr, slice, str};
@@ -40,6 +40,30 @@ impl IStr {
     }
 }
 
+pub struct Dropper<'a, T> {
+    var: &'a mut T,
+}
+
+impl<'a, T> Drop for Dropper<'a, T> {
+    fn drop(&mut self) {
+        unsafe { ptr::drop_in_place(self.var) };
+    }
+}
+
+impl<'a, T> Deref for Dropper<'a, T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        return &*self.var;
+    }
+}
+
+impl<'a, T> DerefMut for Dropper<'a, T> {
+    fn deref_mut(&mut self) -> &mut T {
+        return self.var;
+    }
+}
+
 pub struct Frame<'a> {
     pub data: &'a mut [u8],
     pub bump: AtomicUsize,
@@ -48,7 +72,25 @@ pub struct Frame<'a> {
 pub trait Allocator<'a> {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8;
 
-    fn add<T>(&self, t: T) -> &'a mut T {
+    fn add<T: Copy>(&self, t: T) -> &'a mut T {
+        unsafe {
+            let location = self.alloc(Layout::new::<T>()) as *mut T;
+            ptr::write(location, t);
+            return &mut *location;
+        }
+    }
+
+    fn add_any<T>(&self, t: T) -> Dropper<'a, T> {
+        unsafe {
+            let location = self.alloc(Layout::new::<T>()) as *mut T;
+            ptr::write(location, t);
+            return Dropper {
+                var: &mut *location,
+            };
+        }
+    }
+
+    fn add_leak<T>(&self, t: T) -> &'a mut T {
         unsafe {
             let location = self.alloc(Layout::new::<T>()) as *mut T;
             ptr::write(location, t);
@@ -64,7 +106,7 @@ pub trait Allocator<'a> {
         }
     }
 
-    fn build_array<T, F>(&self, len: usize, mut f: F) -> Result<&'a mut [T], LayoutErr>
+    fn build_array<T: Copy, F>(&self, len: usize, mut f: F) -> Result<&'a mut [T], LayoutErr>
     where
         F: FnMut(usize) -> T,
     {
