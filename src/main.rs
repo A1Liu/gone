@@ -49,5 +49,8 @@ fn compile(files: &FileDb) -> Result<(), Vec<Error>> {
 }
 
 fn main() {
+    println!("{}", core::mem::size_of::<ast::Expr>());
+    println!("{}", core::mem::size_of::<ast::Stmt>());
+    println!("{}", core::mem::size_of::<ast::Type>());
     println!("Hello world!");
 }

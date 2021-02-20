@@ -1,3 +1,4 @@
+use core::convert::TryInto;
 use core::sync::atomic::AtomicUsize;
 use core::{fmt, mem, ops, str};
 use serde::ser::{Serialize, Serializer};
@@ -111,12 +112,22 @@ pub fn register_output(f: impl Fn(String) + 'static) {
 }
 
 pub const NO_FILE: u32 = !0;
-pub type CodeLoc = Range<usize>;
+pub type CodeLoc = Range<u32>;
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq)]
 pub struct Range<T: Copy> {
     pub start: T,
     pub end: T,
+}
+
+impl<T: Copy> Range<T> {
+    pub fn map<E: Copy>(self, mut mapper: impl FnMut(T) -> E) -> Range<E> {
+        return r(mapper(self.start), mapper(self.end));
+    }
+
+    pub fn norm(self) -> ops::Range<T> {
+        return self.start..self.end;
+    }
 }
 
 pub fn r<T: Copy>(start: T, end: T) -> Range<T> {
@@ -135,19 +146,20 @@ where
 #[inline]
 pub fn l(start: usize, end: usize) -> CodeLoc {
     debug_assert!(start <= end);
+    let (start, end) = (start.try_into().unwrap(), end.try_into().unwrap());
 
     CodeLoc { start, end }
 }
 
 impl Into<ops::Range<usize>> for CodeLoc {
     fn into(self) -> ops::Range<usize> {
-        self.start..self.end
+        (self.start as usize)..(self.end as usize)
     }
 }
 
 #[inline]
 pub fn l_from(loc1: CodeLoc, loc2: CodeLoc) -> CodeLoc {
-    l(loc1.start, loc2.end)
+    l(loc1.start as usize, loc2.end as usize)
 }
 
 pub fn align_usize(size: usize, align: usize) -> usize {

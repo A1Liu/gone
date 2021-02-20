@@ -1102,7 +1102,7 @@ impl<'data> Parser<'data> {
                 let tok = self.expect_tok(TokenKind::RBrace, "expected '}' token")?;
 
                 let stmts = self.ast.add_stmts(stmts);
-                return Ok(e(ExprKind::Block(stmts), l_from(start, tok.loc)));
+                return Ok(e(ExprKind::Block { stmts }, l_from(start, tok.loc)));
             }
             _ => return Err(self.err("unexpected token here", tok.loc)),
         }

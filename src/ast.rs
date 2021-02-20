@@ -1,5 +1,6 @@
 use crate::util::*;
 use core::num::NonZeroU32;
+use core::ops::{Index, IndexMut};
 
 #[derive(Debug, Clone, Copy)]
 pub struct StrIdx(NonZeroU32);
@@ -16,10 +17,7 @@ pub struct TypeModIdx(NonZeroU32);
 #[derive(Debug, Clone, Copy)]
 pub struct TypeIdx(NonZeroU32);
 
-static_assertions::assert_eq_size!(TypeModIdx, Option<TypeModIdx>);
-
 pub struct Ast {
-    pub file: u32,
     pub strings: StringArray<()>,
     pub params: Vec<(Decl, CodeLoc)>,
     pub idents: Vec<u32>,
@@ -28,6 +26,108 @@ pub struct Ast {
     pub ty_mods: Vec<TypeModifier>,
     pub tys: Vec<Type>,
     pub globals: Range<StmtIdx>,
+    pub file: u32,
+}
+
+impl Index<StrIdx> for Ast {
+    type Output = str;
+
+    fn index(&self, idx: StrIdx) -> &str {
+        let TS(tag, data) = &self.strings[!idx.0.get() as usize];
+        return data;
+    }
+}
+
+impl Index<ParamIdx> for Ast {
+    type Output = (Decl, CodeLoc);
+
+    fn index(&self, idx: ParamIdx) -> &(Decl, CodeLoc) {
+        return &self.params[!idx.0.get() as usize];
+    }
+}
+
+impl Index<IdentIdx> for Ast {
+    type Output = u32;
+
+    fn index(&self, idx: IdentIdx) -> &u32 {
+        return &self.idents[!idx.0.get() as usize];
+    }
+}
+
+impl Index<Range<ExprIdx>> for Ast {
+    type Output = [Expr];
+
+    fn index(&self, idx: Range<ExprIdx>) -> &[Expr] {
+        return &self.exprs[idx.map(|i| !i.0.get() as usize).norm()];
+    }
+}
+
+impl IndexMut<Range<ExprIdx>> for Ast {
+    fn index_mut(&mut self, idx: Range<ExprIdx>) -> &mut [Expr] {
+        return &mut self.exprs[idx.map(|i| !i.0.get() as usize).norm()];
+    }
+}
+
+impl Index<Range<StmtIdx>> for Ast {
+    type Output = [Stmt];
+
+    fn index(&self, idx: Range<StmtIdx>) -> &[Stmt] {
+        return &self.stmts[idx.map(|i| !i.0.get() as usize).norm()];
+    }
+}
+
+impl Index<Range<TypeModIdx>> for Ast {
+    type Output = [TypeModifier];
+
+    fn index(&self, idx: Range<TypeModIdx>) -> &[TypeModifier] {
+        return &self.ty_mods[idx.map(|i| !i.0.get() as usize).norm()];
+    }
+}
+
+impl Index<Range<TypeIdx>> for Ast {
+    type Output = [Type];
+
+    fn index(&self, idx: Range<TypeIdx>) -> &[Type] {
+        return &self.tys[idx.map(|i| !i.0.get() as usize).norm()];
+    }
+}
+
+impl Index<ExprIdx> for Ast {
+    type Output = Expr;
+
+    fn index(&self, idx: ExprIdx) -> &Expr {
+        return self.exprs.get(!idx.0.get() as usize).unwrap();
+    }
+}
+
+impl IndexMut<ExprIdx> for Ast {
+    fn index_mut(&mut self, idx: ExprIdx) -> &mut Expr {
+        return self.exprs.get_mut(!idx.0.get() as usize).unwrap();
+    }
+}
+
+impl Index<StmtIdx> for Ast {
+    type Output = Stmt;
+
+    fn index(&self, idx: StmtIdx) -> &Stmt {
+        return self.stmts.get(!idx.0.get() as usize).unwrap();
+    }
+}
+
+impl Index<TypeModIdx> for Ast {
+    type Output = TypeModifier;
+
+    fn index(&self, idx: TypeModIdx) -> &TypeModifier {
+        return self.ty_mods.get(!idx.0.get() as usize).unwrap();
+    }
+}
+
+impl Index<TypeIdx> for Ast {
+    type Output = Type;
+
+    fn index(&self, idx: TypeIdx) -> &Type {
+        return self.tys.get(!idx.0.get() as usize).unwrap();
+    }
 }
 
 fn w(i: u32) -> NonZeroU32 {
@@ -190,7 +290,9 @@ pub enum ExprKind {
         params: Range<ParamIdx>,
         body: ExprIdx,
     },
-    Block(Range<StmtIdx>),
+    Block {
+        stmts: Range<StmtIdx>,
+    },
     Struct(Range<StmtIdx>),
     UnitStruct(TypeIdx),
     BinOp(BinOp, ExprIdx, ExprIdx),
