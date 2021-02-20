@@ -12,7 +12,6 @@ mod buckets;
 mod filedb;
 mod lexer;
 mod parser;
-mod tc_ast;
 mod type_checker;
 
 #[cfg(test)]
