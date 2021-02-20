@@ -1,3 +1,4 @@
+use crate::filedb::*;
 use crate::util::*;
 use core::num::NonZeroU32;
 use core::ops::{Index, IndexMut};
@@ -12,6 +13,10 @@ macro_rules! define_idx {
         pub struct $name(NonZeroU32);
 
         impl $name {
+            pub const unsafe fn new_unchecked(idx: u32) -> Self {
+                return $name(NonZeroU32::new_unchecked(!idx));
+            }
+
             pub fn illegal() -> Self {
                 return $name(w(1));
             }
@@ -101,6 +106,16 @@ define_idx!(StmtIdx, Stmt, stmts);
 define_idx!(IdentIdx, u32, idents);
 define_idx!(ExprIdx, Expr, exprs);
 
+pub const INFER_TYPE: Type = Type {
+    modifiers: r!(unsafe { TypeModIdx::new_unchecked(0) }, unsafe {
+        TypeModIdx::new_unchecked(0)
+    }),
+    base: TypeBase::Named(BuiltinSymbol::Underscore as u32),
+    loc: r!(0, 0),
+};
+
+pub const INFER_TYPE_IDX: TypeIdx = unsafe { TypeIdx::new_unchecked(0) };
+
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub struct StrIdx(NonZeroU32);
 
@@ -125,8 +140,8 @@ impl Ast {
             exprs: Vec::new(),
             stmts: Vec::new(),
             ty_mods: Vec::new(),
-            tys: Vec::new(),
-            globals: r(idx, idx),
+            tys: vec![INFER_TYPE],
+            globals: r!(idx, idx),
         }
     }
 
@@ -157,31 +172,31 @@ impl Ast {
     pub fn add_stmts(&mut self, mut stmts: Vec<Stmt>) -> Range<StmtIdx> {
         let begin = StmtIdx(w(!self.stmts.len() as u32));
         self.stmts.append(&mut stmts);
-        return r(begin, StmtIdx(w(!self.stmts.len() as u32)));
+        return r!(begin, StmtIdx(w(!self.stmts.len() as u32)));
     }
 
     pub fn add_exprs(&mut self, mut exprs: Vec<Expr>) -> Range<ExprIdx> {
         let begin = ExprIdx(w(!self.exprs.len() as u32));
         self.exprs.append(&mut exprs);
-        return r(begin, ExprIdx(w(!self.exprs.len() as u32)));
+        return r!(begin, ExprIdx(w(!self.exprs.len() as u32)));
     }
 
     pub fn add_idents(&mut self, mut idents: Vec<u32>) -> Range<IdentIdx> {
         let begin = IdentIdx(w(!self.idents.len() as u32));
         self.idents.append(&mut idents);
-        return r(begin, IdentIdx(w(!self.idents.len() as u32)));
+        return r!(begin, IdentIdx(w(!self.idents.len() as u32)));
     }
 
     pub fn add_ty_mods(&mut self, mut ty_mods: Vec<TypeModifier>) -> Range<TypeModIdx> {
         let begin = TypeModIdx(w(!self.ty_mods.len() as u32));
         self.ty_mods.append(&mut ty_mods);
-        return r(begin, TypeModIdx(w(!self.ty_mods.len() as u32)));
+        return r!(begin, TypeModIdx(w(!self.ty_mods.len() as u32)));
     }
 
     pub fn add_decls(&mut self, mut decls: Vec<Decl>) -> Range<DeclIdx> {
         let begin = DeclIdx(w(!self.decls.len() as u32));
         self.decls.append(&mut decls);
-        return r(begin, DeclIdx(w(!self.decls.len() as u32)));
+        return r!(begin, DeclIdx(w(!self.decls.len() as u32)));
     }
 }
 
@@ -253,7 +268,7 @@ pub struct Type {
 #[derive(Debug, Clone, Copy)]
 pub struct Decl {
     pub idents: Range<IdentIdx>,
-    pub ty: Option<TypeIdx>,
+    pub ty: TypeIdx,
     pub expr: Option<ExprIdx>,
     pub loc: CodeLoc,
 }
@@ -309,7 +324,7 @@ pub enum ExprKind {
 #[derive(Debug, Clone, Copy)]
 pub struct Expr {
     pub kind: ExprKind,
-    pub ty: Option<TypeIdx>,
+    pub ty: TypeIdx,
     pub side_effects: Option<bool>,
     pub loc: CodeLoc,
 }
@@ -317,7 +332,7 @@ pub struct Expr {
 pub fn e(kind: ExprKind, loc: CodeLoc) -> Expr {
     return Expr {
         kind,
-        ty: None,
+        ty: INFER_TYPE_IDX,
         side_effects: None,
         loc,
     };

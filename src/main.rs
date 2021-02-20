@@ -12,7 +12,7 @@ mod buckets;
 mod filedb;
 mod lexer;
 mod parser;
-mod visitors;
+mod passes;
 
 #[cfg(test)]
 mod test;

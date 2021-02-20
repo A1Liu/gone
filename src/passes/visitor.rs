@@ -2,8 +2,6 @@ use crate::ast::*;
 use crate::buckets::*;
 use crate::util::*;
 
-pub mod type_checker;
-
 pub trait Visitor {
     fn visit_stmt(&mut self, idx: StmtIdx, stmt: &mut Stmt);
     fn visit_expr(&mut self, idx: ExprIdx, expr: &mut Expr);
@@ -288,9 +286,7 @@ impl<'a> TourGuide<'a> {
             stack.push(Request::expr(expr));
         }
 
-        if let Some(ty) = self.ast[decl].ty {
-            stack.push(Request::ty(ty));
-        }
+        stack.push(Request::ty(self.ast[decl].ty));
     }
 
     pub fn dispatch_ty(&mut self, ty: TypeIdx, see_children: bool, stack: &mut Vec<Request>) {

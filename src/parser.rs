@@ -178,15 +178,15 @@ impl<'data> Parser<'data> {
             self.eat_newline();
             if let Some(tok) = self.peek() {
                 if tok.kind != TokenKind::Eq {
-                    let (ty, expr, idents) = (Some(ty), None, self.ast.add_idents(idents));
+                    let (ty, expr, idents) = (ty, None, self.ast.add_idents(idents));
                     #[rustfmt::skip]
                     return Ok(Decl { idents, ty, expr, loc, });
                 }
             }
 
-            Some(ty)
+            ty
         } else {
-            None
+            INFER_TYPE_IDX
         };
 
         let tok = self.expect_tok(TokenKind::Eq, "expected an '=' token")?;

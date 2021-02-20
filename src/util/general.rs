@@ -120,18 +120,23 @@ pub struct Range<T: Copy> {
     pub end: T,
 }
 
+macro_rules! r {
+    ($start:expr, $end:expr) => {{
+        $crate::util::Range {
+            start: $start,
+            end: $end,
+        }
+    }};
+}
+
 impl<T: Copy> Range<T> {
     pub fn map<E: Copy>(self, mut mapper: impl FnMut(T) -> E) -> Range<E> {
-        return r(mapper(self.start), mapper(self.end));
+        return r!(mapper(self.start), mapper(self.end));
     }
 
     pub fn norm(self) -> ops::Range<T> {
         return self.start..self.end;
     }
-}
-
-pub fn r<T: Copy>(start: T, end: T) -> Range<T> {
-    Range { start, end }
 }
 
 impl<T: Copy> fmt::Debug for Range<T>
