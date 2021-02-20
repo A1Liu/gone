@@ -2,6 +2,8 @@ use crate::ast::*;
 use crate::buckets::*;
 use crate::util::*;
 
+pub mod type_checker;
+
 pub trait Visitor {
     fn visit_stmt(&mut self, idx: StmtIdx, stmt: &mut Stmt);
     fn visit_expr(&mut self, idx: ExprIdx, expr: &mut Expr);
@@ -197,23 +199,25 @@ impl<'a> TourGuide<'a> {
         match self.ast[expr].kind {
             ExprKind::New(ty) => stack.push(Request::ty(ty)),
             ExprKind::Function { params, body } => {
-                stack.push(Request::expr(body));
-                for param in params.into_iter().rev() {
+                for stmt in body.rev() {
+                    stack.push(Request::stmt(stmt));
+                }
+                for param in params.rev() {
                     stack.push(Request::decl(param));
                 }
             }
             ExprKind::Block { stmts } => {
-                for stmt in stmts.into_iter().rev() {
+                for stmt in stmts.rev() {
                     stack.push(Request::stmt(stmt));
                 }
             }
             ExprKind::Struct(stmts) => {
-                for stmt in stmts.into_iter().rev() {
+                for stmt in stmts.rev() {
                     stack.push(Request::stmt(stmt));
                 }
             }
             ExprKind::List { values } => {
-                for value in values.into_iter().rev() {
+                for value in values.rev() {
                     stack.push(Request::expr(value));
                 }
             }
@@ -234,7 +238,7 @@ impl<'a> TourGuide<'a> {
             }
             ExprKind::Member { member, base } => stack.push(Request::expr(base)),
             ExprKind::Call { function, params } => {
-                for param in params.into_iter().rev() {
+                for param in params.rev() {
                     stack.push(Request::expr(param));
                 }
                 stack.push(Request::expr(function));

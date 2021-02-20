@@ -268,7 +268,7 @@ pub enum ExprKind {
     New(TypeIdx),
     Function {
         params: Range<DeclIdx>,
-        body: ExprIdx,
+        body: Range<StmtIdx>,
     },
     Block {
         stmts: Range<StmtIdx>,

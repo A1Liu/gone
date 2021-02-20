@@ -1048,10 +1048,18 @@ impl<'data> Parser<'data> {
                 self.eat_newline();
                 let expr = self.parse_expr()?;
 
-                let kind = ExprKind::Function {
-                    params: self.ast.add_decls(params),
-                    body: self.ast.add_expr(expr),
+                let params = self.ast.add_decls(params);
+                let kind = if let ExprKind::Block { stmts: body } = expr.kind {
+                    ExprKind::Function { params, body }
+                } else {
+                    let (loc, expr) = (expr.loc, self.ast.add_expr(expr));
+                    let body = self.ast.add_stmts(vec![Stmt {
+                        kind: StmtKind::RetVal(expr),
+                        loc,
+                    }]);
+                    ExprKind::Function { params, body }
                 };
+
                 return Ok(e(kind, l_from(tok.loc, expr.loc)));
             }
             TokenKind::LBrace => {
