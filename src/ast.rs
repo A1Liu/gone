@@ -4,8 +4,8 @@ use core::ops::{Index, IndexMut};
 
 #[derive(Debug, Clone, Copy)]
 pub struct StrIdx(NonZeroU32);
-#[derive(Debug, Clone, Copy)]
-pub struct ParamIdx(NonZeroU32);
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DeclIdx(NonZeroU32);
 #[derive(Debug, Clone, Copy)]
 pub struct IdentIdx(NonZeroU32);
 #[derive(Debug, Clone, Copy)]
@@ -19,7 +19,7 @@ pub struct TypeIdx(NonZeroU32);
 
 pub struct Ast {
     pub strings: StringArray<()>,
-    pub params: Vec<(Decl, CodeLoc)>,
+    pub decls: Vec<Decl>,
     pub idents: Vec<u32>,
     pub exprs: Vec<Expr>,
     pub stmts: Vec<Stmt>,
@@ -27,6 +27,21 @@ pub struct Ast {
     pub tys: Vec<Type>,
     pub globals: Range<StmtIdx>,
     pub file: u32,
+}
+
+fn w(i: u32) -> NonZeroU32 {
+    return NonZeroU32::new(i).unwrap();
+}
+
+impl DeclIdx {
+    pub fn illegal() -> Self {
+        return DeclIdx(w(1));
+    }
+
+    pub fn add(self, op: u32) -> Self {
+        let idx = !self.0.get() + op;
+        return DeclIdx(w(!idx));
+    }
 }
 
 impl Index<StrIdx> for Ast {
@@ -38,11 +53,11 @@ impl Index<StrIdx> for Ast {
     }
 }
 
-impl Index<ParamIdx> for Ast {
-    type Output = (Decl, CodeLoc);
+impl Index<DeclIdx> for Ast {
+    type Output = Decl;
 
-    fn index(&self, idx: ParamIdx) -> &(Decl, CodeLoc) {
-        return &self.params[!idx.0.get() as usize];
+    fn index(&self, idx: DeclIdx) -> &Decl {
+        return &self.decls[!idx.0.get() as usize];
     }
 }
 
@@ -130,10 +145,6 @@ impl Index<TypeIdx> for Ast {
     }
 }
 
-fn w(i: u32) -> NonZeroU32 {
-    return NonZeroU32::new(i).unwrap();
-}
-
 impl Ast {
     pub fn new(file: u32) -> Self {
         let idx = StmtIdx(w(!0));
@@ -141,7 +152,7 @@ impl Ast {
         Self {
             file,
             strings: StringArray::new(),
-            params: Vec::new(),
+            decls: Vec::new(),
             idents: Vec::new(),
             exprs: Vec::new(),
             stmts: Vec::new(),
@@ -199,10 +210,10 @@ impl Ast {
         return r(begin, TypeModIdx(w(!self.ty_mods.len() as u32)));
     }
 
-    pub fn add_params(&mut self, mut params: Vec<(Decl, CodeLoc)>) -> Range<ParamIdx> {
-        let begin = ParamIdx(w(!self.params.len() as u32));
-        self.params.append(&mut params);
-        return r(begin, ParamIdx(w(!self.params.len() as u32)));
+    pub fn add_decls(&mut self, mut decls: Vec<Decl>) -> Range<DeclIdx> {
+        let begin = DeclIdx(w(!self.decls.len() as u32));
+        self.decls.append(&mut decls);
+        return r(begin, DeclIdx(w(!self.decls.len() as u32)));
     }
 }
 
@@ -276,6 +287,7 @@ pub struct Decl {
     pub idents: Range<IdentIdx>,
     pub ty: Option<TypeIdx>,
     pub expr: Option<ExprIdx>,
+    pub loc: CodeLoc,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -287,7 +299,7 @@ pub enum ExprKind {
     Ident(u32),
     New(TypeIdx),
     Function {
-        params: Range<ParamIdx>,
+        params: Range<DeclIdx>,
         body: ExprIdx,
     },
     Block {
@@ -331,6 +343,7 @@ pub enum ExprKind {
 pub struct Expr {
     pub kind: ExprKind,
     pub ty: Option<TypeIdx>,
+    pub side_effects: Option<bool>,
     pub loc: CodeLoc,
 }
 
@@ -338,6 +351,7 @@ pub fn e(kind: ExprKind, loc: CodeLoc) -> Expr {
     return Expr {
         kind,
         ty: None,
+        side_effects: None,
         loc,
     };
 }
@@ -346,7 +360,7 @@ pub fn e(kind: ExprKind, loc: CodeLoc) -> Expr {
 pub enum StmtKind {
     Noop,
     Expr(ExprKind),
-    Decl(Decl),
+    Decl(DeclIdx),
     Ret,
     RetVal(ExprIdx),
     Branch {

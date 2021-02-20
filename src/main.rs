@@ -4,6 +4,9 @@
 
 extern crate alloc;
 
+#[macro_use]
+mod util;
+
 mod ast;
 mod buckets;
 mod filedb;
@@ -11,7 +14,6 @@ mod lexer;
 mod parser;
 mod tc_ast;
 mod type_checker;
-mod util;
 
 #[cfg(test)]
 mod test;
@@ -49,8 +51,12 @@ fn compile(files: &FileDb) -> Result<(), Vec<Error>> {
 }
 
 fn main() {
-    println!("{}", core::mem::size_of::<ast::Expr>());
-    println!("{}", core::mem::size_of::<ast::Stmt>());
-    println!("{}", core::mem::size_of::<ast::Type>());
-    println!("Hello world!");
+    use core::mem::{align_of, size_of};
+
+    debug!(size_of::<ast::Expr>());
+    debug!(size_of::<ast::Stmt>());
+    debug!(size_of::<ast::StmtKind>());
+    debug!(align_of::<ast::StmtKind>());
+    debug!(size_of::<ast::Type>());
+    debug!(size_of::<ast::Decl>());
 }

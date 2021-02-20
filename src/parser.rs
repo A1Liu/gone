@@ -9,13 +9,7 @@ pub fn parse_file(lexer: &mut Lexer, id: u32, file: &str) -> Result<Ast, Error> 
     // let toks: Vec<_> = parser.tokens.iter().map(|a| a.kind).collect();
     // println!("{:?}", toks);
 
-    let mut stmts = Vec::new();
-    while parser.current < parser.tokens.len() {
-        let stmt = parser.parse_stmt()?;
-
-        stmts.push(stmt);
-    }
-
+    let stmts = parser.parse_stmts()?;
     parser.ast.globals = parser.ast.add_stmts(stmts);
     return Ok(parser.ast);
 }
@@ -108,26 +102,6 @@ impl<'data> Parser<'data> {
                 });
             }
 
-            TokenKind::Ident(id) => {
-                if !self.is_decl() {
-                    let expr = self.parse_expr()?;
-                    self.eat_line_ending();
-
-                    return Ok(Stmt {
-                        kind: StmtKind::Expr(expr.kind),
-                        loc: expr.loc,
-                    });
-                }
-
-                let (decl, loc) = self.expect_decl()?;
-                self.eat_line_ending();
-
-                return Ok(Stmt {
-                    kind: StmtKind::Decl(decl),
-                    loc,
-                });
-            }
-
             TokenKind::Semicolon | TokenKind::Newline => {
                 return Ok(Stmt {
                     kind: StmtKind::Noop,
@@ -167,11 +141,13 @@ impl<'data> Parser<'data> {
         return tok.kind == TokenKind::Comma || tok.kind == TokenKind::Colon;
     }
 
-    pub fn expect_decl(&mut self) -> Result<(Decl, CodeLoc), Error> {
+    pub fn expect_decl(&mut self) -> Result<Decl, Error> {
         let tok = self.pop_err()?;
         let (mut idents, mut loc) = match tok.kind {
             TokenKind::Ident(sym) => (vec![sym], tok.loc),
-            _ => return Err(self.err("expected identifier to begin declaration", tok.loc)),
+            _ => {
+                return Err(self.err("expected identifier to begin declaration", tok.loc, here!()))
+            }
         };
 
         let mut tok = self.pop_err()?;
@@ -185,11 +161,11 @@ impl<'data> Parser<'data> {
                 continue;
             }
 
-            return Err(self.err("expected this to be an identifier", ident_tok.loc));
+            return Err(self.err("expected this to be an identifier", ident_tok.loc, here!()));
         }
 
         if tok.kind != TokenKind::Colon {
-            return Err(self.err("expected this to be a ':' token", tok.loc));
+            return Err(self.err("expected this to be a ':' token", tok.loc, here!()));
         }
 
         self.eat_newline();
@@ -201,7 +177,8 @@ impl<'data> Parser<'data> {
             if let Some(tok) = self.peek() {
                 if tok.kind != TokenKind::Eq {
                     let (ty, expr, idents) = (Some(ty), None, self.ast.add_idents(idents));
-                    return Ok((Decl { idents, ty, expr }, loc));
+                    #[rustfmt::skip]
+                    return Ok(Decl { idents, ty, expr, loc, });
                 }
             }
 
@@ -215,8 +192,9 @@ impl<'data> Parser<'data> {
         let expr = self.parse_expr()?;
         let (expr_loc, expr) = (expr.loc, Some(self.ast.add_expr(expr)));
 
-        let idents = self.ast.add_idents(idents);
-        return Ok((Decl { idents, ty, expr }, l_from(loc, expr_loc)));
+        let (idents, loc) = (self.ast.add_idents(idents), l_from(loc, expr_loc));
+        #[rustfmt::skip]
+        return Ok(Decl { idents, ty, expr, loc, });
     }
 
     #[inline]
@@ -407,10 +385,8 @@ impl<'data> Parser<'data> {
 
         let colon_tok = self.pop_err()?;
         if colon_tok.kind != TokenKind::Colon {
-            return Err(self.err(
-                "expected ':' token, got something else instead",
-                colon_tok.loc,
-            ));
+            let message = "expected ':' token, got something else instead";
+            return Err(self.err(message, colon_tok.loc, here!()));
         }
 
         self.eat_newline();
@@ -843,7 +819,7 @@ impl<'data> Parser<'data> {
         };
 
         if tok.kind == TokenKind::DotDotDot {
-            return Err(self.err("'...' operator cannot be chained", loc));
+            return Err(self.err("'...' operator cannot be chained", loc, here!()));
         }
 
         return Ok(range);
@@ -877,10 +853,8 @@ impl<'data> Parser<'data> {
                         }
 
                         if comma_tok.kind != TokenKind::RParen {
-                            return Err(self.err(
-                                "unexpected token when parsing end of function call",
-                                params.pop().unwrap().loc,
-                            ));
+                            let message = "unexpected token when parsing end of function call";
+                            return Err(self.err(message, params.pop().unwrap().loc, here!()));
                         }
                     }
 
@@ -933,7 +907,8 @@ impl<'data> Parser<'data> {
                         continue;
                     }
 
-                    return Err(self.err("expected this to be an identifier", ident_tok.loc));
+                    let message = "expected this to be an identifier";
+                    return Err(self.err(message, ident_tok.loc, here!()));
                 }
                 _ => return Ok(operand),
             }
@@ -978,16 +953,8 @@ impl<'data> Parser<'data> {
                 match self.peek_err()?.kind {
                     TokenKind::LBrace => {
                         self.pop().unwrap();
-                        let mut stmts = Vec::new();
-                        self.eat_newline();
-                        let mut tok = self.peek_err()?;
-                        while tok.kind != TokenKind::RBrace {
-                            let stmt = self.parse_stmt()?;
-                            stmts.push(stmt);
 
-                            tok = self.peek_err()?;
-                        }
-
+                        let stmts = self.parse_stmts()?;
                         let tok = self.expect_tok(TokenKind::RBrace, "expected '}' token")?;
 
                         let stmts = self.ast.add_stmts(stmts);
@@ -1049,7 +1016,7 @@ impl<'data> Parser<'data> {
                             }
 
                             if tok.kind != TokenKind::Comma {
-                                return Err(self.err("expected ',' or ')' here", tok.loc));
+                                return Err(self.err("expected ',' or ')' here", tok.loc, here!()));
                             }
                         }
 
@@ -1081,7 +1048,7 @@ impl<'data> Parser<'data> {
                 let expr = self.parse_expr()?;
 
                 let kind = ExprKind::Function {
-                    params: self.ast.add_params(params),
+                    params: self.ast.add_decls(params),
                     body: self.ast.add_expr(expr),
                 };
                 return Ok(e(kind, l_from(tok.loc, expr.loc)));
@@ -1089,23 +1056,57 @@ impl<'data> Parser<'data> {
             TokenKind::LBrace => {
                 let start = tok.loc;
 
-                let mut stmts = Vec::new();
-                self.eat_newline();
-                let mut tok = self.peek_err()?;
-                while tok.kind != TokenKind::RBrace {
-                    let stmt = self.parse_stmt()?;
-                    stmts.push(stmt);
-
-                    tok = self.peek_err()?;
-                }
-
+                let stmts = self.parse_stmts()?;
                 let tok = self.expect_tok(TokenKind::RBrace, "expected '}' token")?;
 
                 let stmts = self.ast.add_stmts(stmts);
                 return Ok(e(ExprKind::Block { stmts }, l_from(start, tok.loc)));
             }
-            _ => return Err(self.err("unexpected token here", tok.loc)),
+            _ => return Err(self.err("unexpected token here", tok.loc, here!())),
         }
+    }
+
+    #[inline]
+    pub fn parse_stmts(&mut self) -> Result<Vec<Stmt>, Error> {
+        let (mut stmts, mut decls, mut decl_stmts) = (Vec::new(), Vec::new(), Vec::new());
+        self.eat_newline();
+        while let Some(tok) = self.peek() {
+            if tok.kind == TokenKind::RBrace {
+                break;
+            }
+
+            if !self.is_decl() {
+                stmts.push(self.parse_stmt()?);
+                self.eat_newline();
+                continue;
+            }
+
+            let decl = self.expect_decl()?;
+            self.eat_line_ending();
+
+            decls.push(decl);
+            decl_stmts.push(stmts.len());
+            stmts.push(Stmt {
+                kind: StmtKind::Decl(DeclIdx::illegal()),
+                loc: decl.loc,
+            });
+        }
+
+        let decl_range = self.ast.add_decls(decls);
+        let mut cur_decl_idx = decl_range.start;
+        debug_assert_eq!(cur_decl_idx.add(decl_stmts.len() as u32), decl_range.end);
+
+        for idx in decl_stmts {
+            if let StmtKind::Decl(idx) = &mut stmts[idx].kind {
+                *idx = cur_decl_idx;
+                cur_decl_idx = cur_decl_idx.add(1);
+                continue;
+            }
+
+            unreachable!("{:?}", stmts[idx]);
+        }
+
+        return Ok(stmts);
     }
 
     pub fn parse_type(&mut self) -> Result<Type, Error> {
@@ -1176,7 +1177,9 @@ impl<'data> Parser<'data> {
                     });
                 }
 
-                kind => return Err(self.err("unexpected token while parsing type", tok.loc)),
+                kind => {
+                    return Err(self.err("unexpected token while parsing type", tok.loc, here!()))
+                }
             }
 
             self.eat_newline();
@@ -1191,6 +1194,8 @@ impl<'data> Parser<'data> {
             message: None,
             loc: self.tokens[self.current - 1].loc,
             file: self.ast.file,
+            #[cfg(debug_assertions)]
+            compiler_loc: here!(),
         });
     }
 
@@ -1231,7 +1236,7 @@ impl<'data> Parser<'data> {
             return Ok(tok);
         }
 
-        return Err(self.err(err, tok.loc));
+        return Err(self.err(err, tok.loc, here!()));
     }
 
     pub fn peek(&mut self) -> Option<Token<'data>> {
@@ -1249,12 +1254,14 @@ impl<'data> Parser<'data> {
         return Some(tok);
     }
 
-    pub fn err(&self, info: &'static str, loc: CodeLoc) -> Error {
+    pub fn err(&self, info: &'static str, loc: CodeLoc, cloc: CompilerLoc) -> Error {
         return Error {
             info,
             message: None,
             loc,
             file: self.ast.file,
+            #[cfg(debug_assertions)]
+            compiler_loc: cloc,
         };
     }
 }
