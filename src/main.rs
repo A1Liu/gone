@@ -53,6 +53,7 @@ fn main() {
     use core::mem::{align_of, size_of};
 
     debug!(size_of::<ast::Expr>());
+    debug!(size_of::<ast::ExprKind>());
     debug!(size_of::<ast::Stmt>());
     debug!(size_of::<ast::StmtKind>());
     debug!(align_of::<ast::StmtKind>());

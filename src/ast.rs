@@ -1,6 +1,6 @@
 use crate::filedb::*;
 use crate::util::*;
-use core::num::NonZeroU32;
+use core::num::{NonZeroI32, NonZeroU32};
 use core::ops::{Index, IndexMut};
 
 fn w(i: u32) -> NonZeroU32 {
@@ -259,8 +259,14 @@ pub enum TypeBase {
     String,
     S64,
     U64,
-    Ux,
-    Sx,
+    Ux {
+        max: NonZeroU32, // if it needs U64 of space to represent itself, its a U64
+    },
+    Sx {
+        min: NonZeroI32,
+        max: NonZeroI32,
+    },
+    EqTo(TypeIdx),
     Named(u32),
     Function {
         ret: TypeIdx,
@@ -283,6 +289,9 @@ pub struct Decl {
     pub loc: CodeLoc,
 }
 
+// TODO this could be compressed: we know that Ternary, BinOp, MutAssign, etc. could
+// be rewritten using a single ExprIdx, because the items pointed to are always
+// allocated one after the other
 #[derive(Debug, Clone, Copy)]
 pub enum ExprKind {
     Null,
