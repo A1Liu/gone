@@ -51,9 +51,7 @@ pub fn check_scope(ast: &mut Ast, env: &mut Env, stmts: Range<StmtIdx>) -> Resul
 pub fn check_stmt(ast: &mut Ast, env: &mut Env, stmt: StmtIdx) -> Result<(), Error> {
     match ast[stmt].kind {
         StmtKind::Noop => {}
-        StmtKind::Expr(expr) => {
-            check_expr(ast, env, expr)?;
-        }
+        StmtKind::Expr(expr) => core::mem::drop(check_expr(ast, env, expr)?),
         StmtKind::Decl(decl) => check_decl(ast, env, decl)?,
         _ => unimplemented!(),
     }

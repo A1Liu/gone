@@ -58,6 +58,8 @@ the philosophy of the compiler should be to optimize first and foremost for:
 
 - How do we do lifetime analysis, especially for recursive functions, without annotations?
 - How do we handle types at compile time?
+- How do we handle methods?
+  - Methods are just functions with the type as the first parameter.
 
 ## Architecture
 Compiler passes:

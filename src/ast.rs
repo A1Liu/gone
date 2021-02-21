@@ -198,6 +198,14 @@ impl Ast {
         self.decls.append(&mut decls);
         return r!(begin, DeclIdx(w(!self.decls.len() as u32)));
     }
+
+    pub fn e(&mut self, kind: ExprKind, loc: CodeLoc) -> Expr {
+        return Expr {
+            kind,
+            ty: self.add_ty(INFER_TYPE),
+            loc,
+        };
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Hash, Eq, Copy)]
@@ -251,6 +259,8 @@ pub enum TypeBase {
     String,
     S64,
     U64,
+    Ux,
+    Sx,
     Named(u32),
     Function {
         ret: TypeIdx,
@@ -325,17 +335,7 @@ pub enum ExprKind {
 pub struct Expr {
     pub kind: ExprKind,
     pub ty: TypeIdx,
-    pub side_effects: Option<bool>,
     pub loc: CodeLoc,
-}
-
-pub fn e(kind: ExprKind, loc: CodeLoc) -> Expr {
-    return Expr {
-        kind,
-        ty: INFER_TYPE_IDX,
-        side_effects: None,
-        loc,
-    };
 }
 
 #[derive(Debug, Clone, Copy)]
