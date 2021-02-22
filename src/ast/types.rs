@@ -32,6 +32,12 @@ macro_rules! define_idx {
             }
         }
 
+        impl Range<$name> {
+            pub fn len(self) -> u32 {
+                return !self.end.0.get() - !self.start.0.get();
+            }
+        }
+
         impl Iterator for Range<$name> {
             type Item = $name;
 
@@ -106,6 +112,41 @@ define_idx!(StmtIdx, Stmt, stmts);
 define_idx!(IdentIdx, u32, idents);
 define_idx!(ExprIdx, Expr, exprs);
 
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+pub struct TernaryIdx(ExprIdx);
+
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+pub struct PairIdx(ExprIdx);
+
+impl TernaryIdx {
+    #[inline]
+    pub fn condition(self) -> ExprIdx {
+        return self.0;
+    }
+
+    #[inline]
+    pub fn if_true(self) -> ExprIdx {
+        return self.0.add(1);
+    }
+
+    #[inline]
+    pub fn if_false(self) -> ExprIdx {
+        return self.0.add(2);
+    }
+}
+
+impl PairIdx {
+    #[inline]
+    pub fn get_0(self) -> ExprIdx {
+        return self.0;
+    }
+
+    #[inline]
+    pub fn get_1(self) -> ExprIdx {
+        return self.0.add(1);
+    }
+}
+
 pub const INFER_TYPE: Type = Type {
     modifiers: r!(unsafe { TypeModIdx::new_unchecked(0) }, unsafe {
         TypeModIdx::new_unchecked(0)
@@ -155,6 +196,21 @@ impl Ast {
         let idx = w(!self.exprs.len() as u32);
         self.exprs.push(expr);
         return ExprIdx(idx);
+    }
+
+    pub fn add_ternary(&mut self, condition: Expr, if_true: Expr, if_false: Expr) -> TernaryIdx {
+        let idx = w(!self.exprs.len() as u32);
+        self.exprs.push(condition);
+        self.exprs.push(if_true);
+        self.exprs.push(if_false);
+        return TernaryIdx(ExprIdx(idx));
+    }
+
+    pub fn add_pair(&mut self, left: Expr, right: Expr) -> PairIdx {
+        let idx = w(!self.exprs.len() as u32);
+        self.exprs.push(left);
+        self.exprs.push(right);
+        return PairIdx(ExprIdx(idx));
     }
 
     pub fn add_stmt(&mut self, stmt: Stmt) -> StmtIdx {
@@ -301,7 +357,8 @@ pub enum ExprKind {
     Ident(u32),
     New(TypeIdx),
     Function {
-        params: Range<DeclIdx>,
+        params: DeclIdx,
+        params_len: u16,
         body: Range<StmtIdx>,
     },
     Block {
@@ -310,8 +367,8 @@ pub enum ExprKind {
     Struct(Range<StmtIdx>),
     UnitStruct(TypeIdx),
     UnaryOp(UnaryOp, ExprIdx),
-    BinOp(BinOp, ExprIdx, ExprIdx),
-    Range(Option<ExprIdx>, Option<ExprIdx>),
+    BinOp(BinOp, PairIdx),
+    Range(ExprIdx, ExprIdx),
     List {
         values: Range<ExprIdx>,
     },
@@ -320,24 +377,15 @@ pub enum ExprKind {
         base: ExprIdx,
     },
     Call {
-        function: ExprIdx,
-        params: Range<ExprIdx>,
+        func_and_params: Range<ExprIdx>,
     },
-    Ternary {
-        condition: ExprIdx,
-        if_true: ExprIdx,
-        if_false: ExprIdx,
-    },
+    Ternary(TernaryIdx),
     Cast {
         ty: TypeIdx,
         expr: ExprIdx,
     },
-    Assign(ExprIdx, ExprIdx),
-    MutAssign {
-        op: BinOp,
-        target: ExprIdx,
-        value: ExprIdx,
-    },
+    Assign(PairIdx),
+    MutAssign(BinOp, PairIdx),
 }
 
 #[derive(Debug, Clone, Copy)]
