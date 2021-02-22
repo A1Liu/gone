@@ -1,4 +1,4 @@
-use super::types::*;
+use super::tree::*;
 use crate::buckets::*;
 use crate::filedb::*;
 use crate::util::*;

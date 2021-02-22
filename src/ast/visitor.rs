@@ -196,11 +196,15 @@ impl<'a> TourGuide<'a> {
 
         match self.ast[expr].kind {
             ExprKind::New(ty) => stack.push(Request::ty(ty)),
-            ExprKind::Function { params, body } => {
+            ExprKind::Function {
+                params,
+                params_len,
+                body,
+            } => {
                 for stmt in body.rev() {
                     stack.push(Request::stmt(stmt));
                 }
-                for param in params.rev() {
+                for param in r!(params, params.add(params_len as u32)).rev() {
                     stack.push(Request::decl(param));
                 }
             }
@@ -222,41 +226,32 @@ impl<'a> TourGuide<'a> {
 
             ExprKind::UnitStruct(ty) => stack.push(Request::ty(ty)),
             ExprKind::UnaryOp(op, expr) => stack.push(Request::expr(expr)),
-            ExprKind::BinOp(op, a, b) => {
-                stack.push(Request::expr(b));
-                stack.push(Request::expr(a));
+            ExprKind::BinOp(op, pair) => {
+                stack.push(Request::expr(pair.get_1()));
+                stack.push(Request::expr(pair.get_0()));
             }
             ExprKind::Range(begin, end) => {
-                if let Some(end) = end {
-                    stack.push(Request::expr(end));
-                }
-                if let Some(begin) = begin {
-                    stack.push(Request::expr(begin));
-                }
+                stack.push(Request::expr(end));
+                stack.push(Request::expr(begin));
             }
             ExprKind::Member { member, base } => stack.push(Request::expr(base)),
-            ExprKind::Call { function, params } => {
-                for param in params.rev() {
+            ExprKind::Call { func_and_params } => {
+                for param in func_and_params.rev() {
                     stack.push(Request::expr(param));
                 }
-                stack.push(Request::expr(function));
             }
-            ExprKind::Ternary {
-                condition,
-                if_true,
-                if_false,
-            } => {
-                stack.push(Request::expr(if_false));
-                stack.push(Request::expr(if_true));
-                stack.push(Request::expr(condition));
+            ExprKind::Ternary(tern) => {
+                stack.push(Request::expr(tern.if_false()));
+                stack.push(Request::expr(tern.if_true()));
+                stack.push(Request::expr(tern.condition()));
             }
-            ExprKind::Assign(target, value) => {
-                stack.push(Request::expr(value));
-                stack.push(Request::expr(target));
+            ExprKind::Assign(pair) => {
+                stack.push(Request::expr(pair.get_1()));
+                stack.push(Request::expr(pair.get_0()));
             }
-            ExprKind::MutAssign { op, target, value } => {
-                stack.push(Request::expr(value));
-                stack.push(Request::expr(target));
+            ExprKind::MutAssign(op, pair) => {
+                stack.push(Request::expr(pair.get_1()));
+                stack.push(Request::expr(pair.get_0()));
             }
             ExprKind::Cast { ty, expr } => {
                 stack.push(Request::expr(expr));

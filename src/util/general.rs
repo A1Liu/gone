@@ -120,6 +120,8 @@ pub struct Range<T: Copy> {
     pub end: T,
 }
 
+// must be macro because needs to be used in const context and const fn can't be
+// generic rn
 macro_rules! r {
     ($start:expr, $end:expr) => {{
         $crate::util::Range {
