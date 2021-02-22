@@ -25,15 +25,41 @@ pub enum ScopeType {
     // { /* this kind of scope */ }
     // continue/break affect enclosing loop
     Block,
+
+    // struct { /* this kind of scope */ }
+    // continue/break affect enclosing loop
+    StructBody,
 }
 
 pub struct Scope {
     pub decls: HashMap<u32, TypeIdx>,
     pub ty: ScopeType,
+    pub ty_roots: HashMap<TypeIdx, CodeLoc>,
 }
 
-type Env<'a> = StackLL<'a, Scope>;
+impl Scope {
+    pub fn new(ty: ScopeType) -> Self {
+        Scope {
+            decls: HashMap::new(),
+            ty,
+            ty_roots: HashMap::new(),
+        }
+    }
+}
 
+pub struct Env<'a>(StackLL<'a, Scope>);
+
+impl<'a> Env<'a> {
+    pub fn global() -> Self {
+        return Self(StackLL::new(Scope::new(ScopeType::Global)));
+    }
+
+    pub fn struct_body<'b>(&'b mut self) -> Env<'b> {
+        return Env(self.0.child(Scope::new(ScopeType::StructBody)));
+    }
+}
+
+#[allow(unused_macros)]
 macro_rules! error {
     ($info:expr, $loc:expr, $file:expr, $( $tt:tt ),* ) => {{
         Error {
@@ -47,37 +73,35 @@ macro_rules! error {
     }};
 }
 
-pub struct Checker {
-    pub ty_roots: HashMap<TypeIdx, ()>,
-    pub ast: Ast,
+pub fn check_ast(ast: &mut Ast) -> Result<(), Error> {
+    let (mut env, globals) = (Env::global(), ast.globals);
+    return check_scope(ast, &mut env, globals);
 }
 
-impl Checker {
-    // just does scope checking, without any of the fancy language features associated with scopes
-    pub fn check_scope(&mut self, env: &mut Env, stmts: Range<StmtIdx>) -> Result<(), Error> {
-        for stmt in stmts {
-            self.check_stmt(env, stmt)?;
-        }
-
-        return Ok(());
+// just does scope checking, without any of the fancy language features associated with scopes
+pub fn check_scope(ast: &mut Ast, env: &mut Env, stmts: Range<StmtIdx>) -> Result<(), Error> {
+    for stmt in stmts {
+        check_stmt(ast, env, stmt)?;
     }
 
-    pub fn check_stmt(&mut self, env: &mut Env, stmt: StmtIdx) -> Result<(), Error> {
-        match self.ast[stmt].kind {
-            StmtKind::Noop => {}
-            StmtKind::Expr(expr) => core::mem::drop(self.check_expr(env, expr)?),
-            StmtKind::Decl(decl) => self.check_decl(env, decl)?,
-            _ => unimplemented!(),
-        }
+    return Ok(());
+}
 
-        return Ok(());
+pub fn check_stmt(ast: &mut Ast, env: &mut Env, stmt: StmtIdx) -> Result<(), Error> {
+    match ast[stmt].kind {
+        StmtKind::Noop => {}
+        StmtKind::Expr(expr) => core::mem::drop(check_expr(ast, env, expr)?),
+        StmtKind::Decl(decl) => check_decl(ast, env, decl)?,
+        _ => unimplemented!(),
     }
 
-    pub fn check_decl(&mut self, env: &mut Env, decl: DeclIdx) -> Result<(), Error> {
-        unimplemented!()
-    }
+    return Ok(());
+}
 
-    pub fn check_expr(&mut self, env: &mut Env, expr: ExprIdx) -> Result<TypeIdx, Error> {
-        unimplemented!()
-    }
+pub fn check_decl(ast: &mut Ast, env: &mut Env, decl: DeclIdx) -> Result<(), Error> {
+    unimplemented!()
+}
+
+pub fn check_expr(ast: &mut Ast, env: &mut Env, expr: ExprIdx) -> Result<TypeIdx, Error> {
+    unimplemented!()
 }
