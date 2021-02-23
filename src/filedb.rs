@@ -272,6 +272,7 @@ impl FileDb {
 }
 
 pub struct Symbols {
+    pub anon_str: String,
     pub buckets: BucketListFactory,
     pub to_symbol: HashMap<&'static str, u32>,
     pub to_name: Vec<&'static str>,
@@ -292,6 +293,7 @@ pub enum BuiltinSymbol {
 impl Symbols {
     pub fn new() -> Self {
         let mut new_self = Self {
+            anon_str: String::new(),
             buckets: BucketListFactory::new(),
             to_symbol: HashMap::new(),
             to_name: Vec::new(),
@@ -310,6 +312,16 @@ impl Symbols {
 
         let s = self.buckets.add_str(s);
         let id = self.to_name.len() as u32;
+        self.to_symbol.insert(s, id);
+        self.to_name.push(s);
+        return id;
+    }
+
+    pub fn add_anon(&mut self) -> u32 {
+        let id = self.to_name.len() as u32;
+        write!(self.anon_str, "{{anon {}}}", id).unwrap();
+        let s = self.buckets.add_str(&self.anon_str);
+        self.anon_str.clear();
         self.to_symbol.insert(s, id);
         self.to_name.push(s);
         return id;

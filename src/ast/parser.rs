@@ -145,31 +145,16 @@ impl<'data> Parser<'data> {
             None => return false,
         };
 
-        return tok.kind == TokenKind::Comma || tok.kind == TokenKind::Colon;
+        return tok.kind == TokenKind::Colon;
     }
 
     pub fn expect_decl(&mut self) -> Result<Decl, Error> {
         let tok = self.pop_err()?;
-        let (mut idents, mut loc) = match tok.kind {
-            TokenKind::Ident(sym) => (vec![sym], tok.loc),
-            _ => {
-                return Err(self.err("expected identifier to begin declaration", tok.loc, here!()))
-            }
+        let err_message = "expected identifier to begin declaration";
+        let (ident, loc) = match tok.kind {
+            TokenKind::Ident(sym) => (sym, tok.loc),
+            _ => return Err(self.err(err_message, tok.loc, here!())),
         };
-
-        let mut tok = self.pop_err()?;
-        while tok.kind == TokenKind::Comma {
-            self.eat_newline();
-            let ident_tok = self.pop_err()?;
-            if let TokenKind::Ident(id) = ident_tok.kind {
-                idents.push(id);
-                loc = l_from(loc, ident_tok.loc);
-                tok = self.pop_err()?;
-                continue;
-            }
-
-            return Err(self.err("expected this to be an identifier", ident_tok.loc, here!()));
-        }
 
         if tok.kind != TokenKind::Colon {
             return Err(self.err("expected this to be a ':' token", tok.loc, here!()));
@@ -178,14 +163,14 @@ impl<'data> Parser<'data> {
         self.eat_newline();
         let tok = self.peek_err()?;
         let ty = if tok.kind != TokenKind::Eq {
-            let ty = self.parse_type()?;
-            let (loc, ty) = (l_from(loc, ty.loc), self.ast.add_ty(ty));
+            let (ty, ty_loc) = self.parse_type()?;
+            let (loc, ty, expr) = (l_from(loc, ty_loc), self.ast.add_ty(ty), None);
             self.eat_newline();
+
             if let Some(tok) = self.peek() {
                 if tok.kind != TokenKind::Eq {
-                    let (ty, expr, idents) = (ty, None, self.ast.add_idents(idents));
                     #[rustfmt::skip]
-                    return Ok(Decl { idents, ty, expr, loc, });
+                    return Ok(Decl { ident, ty, expr, loc, });
                 }
             }
 
@@ -197,11 +182,9 @@ impl<'data> Parser<'data> {
         let tok = self.expect_tok(TokenKind::Eq, "expected an '=' token")?;
         self.eat_newline();
         let expr = self.parse_expr()?;
-        let (expr_loc, expr) = (expr.loc, Some(self.ast.add_expr(expr)));
-
-        let (idents, loc) = (self.ast.add_idents(idents), l_from(loc, expr_loc));
+        let (loc, expr) = (l_from(loc, expr.loc), Some(self.ast.add_expr(expr)));
         #[rustfmt::skip]
-        return Ok(Decl { idents, ty, expr, loc, });
+        return Ok(Decl { ident, ty, expr, loc, });
     }
 
     #[inline]
@@ -848,8 +831,8 @@ impl<'data> Parser<'data> {
             }
             TokenKind::New => {
                 self.eat_newline();
-                let ty = self.parse_type()?;
-                let (loc, ty) = (l_from(tok.loc, ty.loc), self.ast.add_ty(ty));
+                let (ty, ty_loc) = self.parse_type()?;
+                let (loc, ty) = (l_from(tok.loc, ty_loc), self.ast.add_ty(ty));
                 return Ok(self.e(ExprKind::New(ty), loc));
             }
             TokenKind::Struct => {
@@ -865,8 +848,8 @@ impl<'data> Parser<'data> {
                         return Ok(self.e(ExprKind::Struct(stmts), l_from(start, tok.loc)));
                     }
                     _ => {
-                        let ty = self.parse_type()?;
-                        let (loc, ty) = (l_from(tok.loc, ty.loc), self.ast.add_ty(ty));
+                        let (ty, ty_loc) = self.parse_type()?;
+                        let (loc, ty) = (l_from(tok.loc, ty_loc), self.ast.add_ty(ty));
                         return Ok(self.e(ExprKind::UnitStruct(ty), loc));
                     }
                 }
@@ -1030,7 +1013,7 @@ impl<'data> Parser<'data> {
         return Ok(stmts);
     }
 
-    pub fn parse_type(&mut self) -> Result<Type, Error> {
+    pub fn parse_type(&mut self) -> Result<(Type, CodeLoc), Error> {
         let mut modifiers = Vec::new();
         let mut tok = self.pop_err()?;
         let mut loc = tok.loc;
@@ -1067,35 +1050,39 @@ impl<'data> Parser<'data> {
 
                 TokenKind::String => {
                     let modifiers = self.ast.add_ty_mods(modifiers);
-                    return Ok(Type {
+                    let ty = Type {
                         modifiers,
                         base: TypeBase::String,
-                        loc,
-                    });
+                    };
+
+                    return Ok((ty, loc));
                 }
                 TokenKind::U64 => {
                     let modifiers = self.ast.add_ty_mods(modifiers);
-                    return Ok(Type {
+                    let ty = Type {
                         modifiers,
                         base: TypeBase::U64,
-                        loc,
-                    });
+                    };
+
+                    return Ok((ty, loc));
                 }
                 TokenKind::Any => {
                     let modifiers = self.ast.add_ty_mods(modifiers);
-                    return Ok(Type {
+                    let ty = Type {
                         modifiers,
                         base: TypeBase::Any,
-                        loc,
-                    });
+                    };
+
+                    return Ok((ty, loc));
                 }
                 TokenKind::Ident(id) => {
                     let modifiers = self.ast.add_ty_mods(modifiers);
-                    return Ok(Type {
+                    let ty = Type {
                         modifiers,
                         base: TypeBase::Named(id),
-                        loc,
-                    });
+                    };
+
+                    return Ok((ty, loc));
                 }
 
                 kind => {

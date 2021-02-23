@@ -8,15 +8,27 @@ use crate::util::*;
 // complicated, which is typechecking variables that have been assigned integer literals.
 // To simplify this case, we require that only integer literals of the same type
 // can be added together. This allows us to us a DISJOINT SET UNION FIND to fill in types
+//
+// Polymorphic functions are handled differently from regular ones
+// 1. Copy out type
+// 2. Infer types using simple type inference
+//
+// Polymorphic structs are also handled differently
+// 1. Copy out type, with params
 
 pub enum ScopeType {
     // (a: string) => { /* this kind of scope */ }
     // continue and break are disabled
-    Function { ret_ty: TypeIdx },
+    Function {
+        ret_ty: TypeIdx,
+        ty_roots: HashMap<TypeIdx, CodeLoc>,
+    },
 
     // The global scope.
     // continue, break, return are disabled
-    Global,
+    Global {
+        ty_roots: HashMap<TypeIdx, CodeLoc>,
+    },
 
     // a := { /* this kind of scope */ }
     // continue/break affect enclosing loop
@@ -34,7 +46,6 @@ pub enum ScopeType {
 pub struct Scope {
     pub decls: HashMap<u32, TypeIdx>,
     pub ty: ScopeType,
-    pub ty_roots: HashMap<TypeIdx, CodeLoc>,
 }
 
 impl Scope {
@@ -42,7 +53,6 @@ impl Scope {
         Scope {
             decls: HashMap::new(),
             ty,
-            ty_roots: HashMap::new(),
         }
     }
 }
@@ -51,7 +61,9 @@ pub struct Env<'a>(StackLL<'a, Scope>);
 
 impl<'a> Env<'a> {
     pub fn global() -> Self {
-        return Self(StackLL::new(Scope::new(ScopeType::Global)));
+        return Self(StackLL::new(Scope::new(ScopeType::Global {
+            ty_roots: HashMap::new(),
+        })));
     }
 
     pub fn struct_body<'b>(&'b mut self) -> Env<'b> {
@@ -85,6 +97,32 @@ pub fn check_scope(ast: &mut Ast, env: &mut Env, stmts: Range<StmtIdx>) -> Resul
     }
 
     return Ok(());
+}
+
+pub fn get_type_defn(ast: &mut Ast, env: &mut Env, idx: TypeIdx) -> Result<TypeIdx, Error> {
+    while ast[idx].modifiers.len() == 0 {
+        // match ast[idx].base {}
+    }
+
+    return Ok(idx);
+}
+
+pub fn unify_types(
+    ast: &mut Ast,
+    env: &mut Env,
+    src: (TypeIdx, TypeIdx),
+    target: TypeIdx,
+) -> Result<TypeIdx, Error> {
+    return Ok(target);
+}
+
+pub fn convert_infer_type(
+    ast: &mut Ast,
+    env: &mut Env,
+    src: TypeIdx,
+    target: TypeIdx,
+) -> Result<TypeIdx, Error> {
+    return Ok(target);
 }
 
 pub fn check_stmt(ast: &mut Ast, env: &mut Env, stmt: StmtIdx) -> Result<(), Error> {

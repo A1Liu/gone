@@ -96,7 +96,6 @@ macro_rules! define_idx {
 pub struct Ast {
     pub strings: StringArray<()>,
     pub decls: Vec<Decl>,
-    pub idents: Vec<u32>,
     pub exprs: Vec<Expr>,
     pub stmts: Vec<Stmt>,
     pub ty_mods: Vec<TypeModifier>,
@@ -109,7 +108,6 @@ define_idx!(DeclIdx, Decl, decls);
 define_idx!(TypeIdx, Type, tys);
 define_idx!(TypeModIdx, TypeModifier, ty_mods);
 define_idx!(StmtIdx, Stmt, stmts);
-define_idx!(IdentIdx, u32, idents);
 define_idx!(ExprIdx, Expr, exprs);
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -152,7 +150,6 @@ pub const INFER_TYPE: Type = Type {
         TypeModIdx::new_unchecked(0)
     }),
     base: TypeBase::Named(BuiltinSymbol::Underscore as u32),
-    loc: r!(0, 0),
 };
 
 pub const INFER_TYPE_IDX: TypeIdx = unsafe { TypeIdx::new_unchecked(0) };
@@ -177,7 +174,6 @@ impl Ast {
             file,
             strings: StringArray::new(),
             decls: Vec::new(),
-            idents: Vec::new(),
             exprs: Vec::new(),
             stmts: Vec::new(),
             ty_mods: Vec::new(),
@@ -237,16 +233,16 @@ impl Ast {
         return r!(begin, ExprIdx(w(!self.exprs.len() as u32)));
     }
 
-    pub fn add_idents(&mut self, mut idents: Vec<u32>) -> Range<IdentIdx> {
-        let begin = IdentIdx(w(!self.idents.len() as u32));
-        self.idents.append(&mut idents);
-        return r!(begin, IdentIdx(w(!self.idents.len() as u32)));
-    }
-
     pub fn add_ty_mods(&mut self, mut ty_mods: Vec<TypeModifier>) -> Range<TypeModIdx> {
         let begin = TypeModIdx(w(!self.ty_mods.len() as u32));
         self.ty_mods.append(&mut ty_mods);
         return r!(begin, TypeModIdx(w(!self.ty_mods.len() as u32)));
+    }
+
+    pub fn add_tys(&mut self, mut tys: Vec<Type>) -> Range<TypeIdx> {
+        let begin = TypeIdx(w(!self.tys.len() as u32));
+        self.tys.append(&mut tys);
+        return r!(begin, TypeIdx(w(!self.tys.len() as u32)));
     }
 
     pub fn add_decls(&mut self, mut decls: Vec<Decl>) -> Range<DeclIdx> {
@@ -313,6 +309,7 @@ pub enum TypeModifier {
 pub enum TypeBase {
     Any,
     String,
+    Type,
     S64,
     U64,
     Ux {
@@ -325,8 +322,7 @@ pub enum TypeBase {
     EqTo(TypeIdx),
     Named(u32),
     Function {
-        ret: TypeIdx,
-        params: Range<TypeIdx>,
+        ret_and_params: Range<TypeIdx>,
     },
 }
 
@@ -334,20 +330,16 @@ pub enum TypeBase {
 pub struct Type {
     pub modifiers: Range<TypeModIdx>,
     pub base: TypeBase,
-    pub loc: CodeLoc,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct Decl {
-    pub idents: Range<IdentIdx>,
+    pub ident: u32,
     pub ty: TypeIdx,
     pub expr: Option<ExprIdx>,
     pub loc: CodeLoc,
 }
 
-// TODO this could be compressed: we know that Ternary, BinOp, MutAssign, etc. could
-// be rewritten using a single ExprIdx, because the items pointed to are always
-// allocated one after the other
 #[derive(Debug, Clone, Copy)]
 pub enum ExprKind {
     Null,
@@ -373,8 +365,8 @@ pub enum ExprKind {
         values: Range<ExprIdx>,
     },
     Member {
-        member: u32,
         base: ExprIdx,
+        member: u32,
     },
     Call {
         func_and_params: Range<ExprIdx>,

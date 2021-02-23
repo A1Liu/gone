@@ -66,6 +66,8 @@ Compiler passes:
 
 1. Lexing
 2. Parsing
-3. Type checking
-4. Memory management (insert GC calls, check lifetimes)
+3. Declaration checking
+3. Looping type checker
+4. Memory management checker (insert GC calls, check lifetimes)
 5. Code generation
+
