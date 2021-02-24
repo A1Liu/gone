@@ -176,7 +176,7 @@ impl<'data> Parser<'data> {
 
             ty
         } else {
-            INFER_TYPE_IDX
+            self.ast.add_ty(INFER_TYPE)
         };
 
         let tok = self.expect_tok(TokenKind::Eq, "expected an '=' token")?;

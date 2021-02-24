@@ -55,11 +55,18 @@ the philosophy of the compiler should be to optimize first and foremost for:
 
     Ideally, we'd support good garbage collection for all of them, but that's
     probably a bit too hard.
+  - Do we need garbage collection? We can probably make the same static guarrantees
+    about pointer validity without the need for garbage collection. And without GC,
+    the runtime becomes much smaller, and easier to implement.
 
 - How do we do lifetime analysis, especially for recursive functions, without annotations?
 - How do we handle types at compile time?
 - How do we handle methods?
   - Methods are just functions with the type as the first parameter.
+- How do we test in a way thats easy to write and easy to rewrite?
+  - Fuzzing functions
+  - Fuzzing/Testing interfaces
+  - 
 
 ## Architecture
 Compiler passes:

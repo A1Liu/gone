@@ -152,8 +152,6 @@ pub const INFER_TYPE: Type = Type {
     base: TypeBase::Named(BuiltinSymbol::Underscore as u32),
 };
 
-pub const INFER_TYPE_IDX: TypeIdx = unsafe { TypeIdx::new_unchecked(0) };
-
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub struct StrIdx(NonZeroU32);
 
