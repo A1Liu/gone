@@ -2,19 +2,19 @@ use crate::ast::*;
 use crate::util::*;
 
 // DISJOINT SET UNION FIND ALGORITHM LETS GOOOOOOOO
-// (for type inference in one-two passes)
+// (for type inference in 2 passes)
 // Idea: Most types are declared; the few types that arent are almost always inferred
-// by just copying the id of the type. However, we have one case that's actually
-// complicated, which is typechecking variables that have been assigned integer literals.
-// To simplify this case, we require that only integer literals of the same type
-// can be added together. This allows us to us a DISJOINT SET UNION FIND to fill in types
+// by just copying the id of the type. However, we have a few casts that are actually
+// complicated, one of which is typechecking variables that have been assigned integer
+// literals. To simplify this case, we require that only integers of the same type
+// can be added/multiplied/etc. together. This allows us to us a DISJOINT SET UNION
+// FIND to fill in types
 //
-// On instantiation of polymorphic struct, build polymorph Type w/ params and add
-// to the AST. Also add type id & stmt range to list of instantiated polymorphic
-// structs
+// On call of const function, call function w/ params and add result to ast.
+// Polymorphic structs are just const functions
 //
-// On call of polymorphic function, build polymorph TYpe w/ params & return value and
-// add to the AST. Also add add type id & function to list of instantiated polymorphic
+// On call of polymorphic function, build polymorph Type w/ params & return value and
+// add to the AST. Also add type id & function to list of instantiated polymorphic
 // functions
 
 pub enum ScopeType {

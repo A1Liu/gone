@@ -98,6 +98,7 @@ pub struct Ast {
     pub decls: Vec<Decl>,
     pub exprs: Vec<Expr>,
     pub stmts: Vec<Stmt>,
+    pub constraints: Vec<Constraint>,
     pub ty_mods: Vec<TypeModifier>,
     pub tys: Vec<Type>,
     pub globals: Range<StmtIdx>,
@@ -106,6 +107,7 @@ pub struct Ast {
 
 define_idx!(DeclIdx, Decl, decls);
 define_idx!(TypeIdx, Type, tys);
+define_idx!(ConstraintIdx, Constraint, constraints);
 define_idx!(TypeModIdx, TypeModifier, ty_mods);
 define_idx!(StmtIdx, Stmt, stmts);
 define_idx!(ExprIdx, Expr, exprs);
@@ -171,6 +173,7 @@ impl Ast {
         Self {
             file,
             strings: StringArray::new(),
+            constraints: Vec::new(),
             decls: Vec::new(),
             exprs: Vec::new(),
             stmts: Vec::new(),
@@ -304,6 +307,16 @@ pub enum TypeModifier {
 }
 
 #[derive(Debug, Clone, Copy)]
+pub struct TyPairIdx(TypeIdx);
+
+#[derive(Debug, Clone, Copy)]
+pub enum Constraint {
+    CanCall { field: u32, tys: Range<TypeIdx> },
+    HasField { field: u32, ty: TypeIdx },
+    BinOpExists { output: TypeIdx },
+}
+
+#[derive(Debug, Clone, Copy)]
 pub enum TypeBase {
     Any,
     String,
@@ -317,6 +330,7 @@ pub enum TypeBase {
         min: NonZeroI32,
         max: NonZeroI32,
     },
+    Constrained(Range<ConstraintIdx>),
     EqTo(TypeIdx),
     Named(u32),
     Function {

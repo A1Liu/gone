@@ -9,7 +9,7 @@ All of these are todo.
 - Pattern matching from Rust
 - For loops from Jai
 - Gradual typing
-- type inference from Rust
+- Type inference from Rust
 - Checked type casting from Java and Go
 - Meta-classes from Zig/Jai
 - Reflection from Java
