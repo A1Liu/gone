@@ -1,21 +1,48 @@
 use crate::ast::*;
 use crate::util::*;
 
+// Ideally the programmer should be able to say the following things without the
+// language getting in the way:
+//
+// 1. struct polymorphism - "this set of structs will behave the same, but with
+//    certain key differences"
+// 2. polymorphism - "this function operates on all structs that behave a certain way"
+// 3. type information - "print out the type of this object at compile time"
+// 4. runtime type information - "print out the type of this object at runtime"
+// 5. serialization - "serialize this struct, and deserialize it later"
+// 6. compile time execution - "run this at compile time"
+// 7. type inference - "the type of this object is stated when the object is used"
+//
+// Solution 1: Separate CTFE and Type systems, types are not values for CTFE
+// Right now we have a mostly unified syntax for doing runtime type information.
+// making these things separate systems probably requires building a new typed
+// AST from the original AST to do things like differentiate between struct declarations
+// and expressions. Additionally, the semantics of the program will be more limited;
+// You won't, for example, be able to declare the type of a variable to be the
+// result of a compile-time function call. Maybe that's ok though. On the bright
+// side, this kind of system would likely be much easier to implement.
+//
+// Solution 2: Unified system, types are values for CTFE
+// This lends well to the unified syntax, and supports much more, but is much harder
+// to implement. We have to do the following steps:
+//
+// - Determine typecheck/execution order - CTFE functions need to be type checked
+//    first, and may call each other, so they'll need to be type checked in waves.
+// - Interleave type checking and constant function evaluation
+//
+// Type check into TCAst, which is the thing thats executed. TCAst is more C-like,
+// with all control flow desugared and the implicit structures (tuples and scopes)
+// made explicit. It also will do things like link directly to declarations instead
+// of using identifier symbols
+//
 // DISJOINT SET UNION FIND ALGORITHM LETS GOOOOOOOO
 // (for type inference in 2 passes)
 // Idea: Most types are declared; the few types that arent are almost always inferred
-// by just copying the id of the type. However, we have a few casts that are actually
-// complicated, one of which is typechecking variables that have been assigned integer
-// literals. To simplify this case, we require that only integers of the same type
-// can be added/multiplied/etc. together. This allows us to us a DISJOINT SET UNION
-// FIND to fill in types
+// by just copying the id of the type. To solve the cases where types must actualy
+// be inferred, we use a DISJOINT SET UNION FIND to indicate a type is equivalent
+// to another type, and use the INFER_TYPE constant to indicate a type is not solved
+// yet.
 //
-// On call of const function, call function w/ params and add result to ast.
-// Polymorphic structs are just const functions
-//
-// On call of polymorphic function, build polymorph Type w/ params & return value and
-// add to the AST. Also add type id & function to list of instantiated polymorphic
-// functions
 
 pub enum ScopeType {
     // (a: string) => { /* this kind of scope */ }
