@@ -4,6 +4,24 @@ use crate::filedb::*;
 use crate::util::*;
 use core::marker::PhantomData;
 
+/*
+pub struct ParseEnv {
+    pub ast: Ast,
+    pub symbols: Symbols,
+}
+
+peg::parser! {
+// match parser::rule(string, env) {}
+pub grammar parser(env: &mut ParseEnv) for str {
+
+rule w() = [' ' | '\t']*
+
+rule number() -> u64 = n:$(['0'..='9']+) {? n.parse().or(Err("number too large")) }
+
+}
+}
+*/
+
 pub fn parse_file(lexer: &mut Lexer, id: u32, file: &str) -> Result<Ast, Error> {
     let mut parser = Parser::new(id, lexer.lex(file));
     parser.eat_newline();
@@ -156,6 +174,7 @@ impl<'data> Parser<'data> {
             _ => return Err(self.err(err_message, tok.loc, here!())),
         };
 
+        let tok = self.pop_err()?;
         if tok.kind != TokenKind::Colon {
             return Err(self.err("expected this to be a ':' token", tok.loc, here!()));
         }

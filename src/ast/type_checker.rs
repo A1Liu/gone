@@ -6,7 +6,7 @@ use crate::util::*;
 //
 // 1. struct polymorphism - "this set of structs will behave the same, but with
 //    certain key differences"
-// 2. polymorphism - "this function operates on all structs that behave a certain way"
+// 2. procedure polymorphism - "this function operates on all structs that behave a certain way"
 // 3. type information - "print out the type of this object at compile time"
 // 4. runtime type information - "print out the type of this object at runtime"
 // 5. serialization - "serialize this struct, and deserialize it later"
@@ -38,7 +38,7 @@ use crate::util::*;
 // DISJOINT SET UNION FIND ALGORITHM LETS GOOOOOOOO
 // (for type inference in 2 passes)
 // Idea: Most types are declared; the few types that arent are almost always inferred
-// by just copying the id of the type. To solve the cases where types must actualy
+// by just copying the id of the type. To solve the cases where types must actually
 // be inferred, we use a DISJOINT SET UNION FIND to indicate a type is equivalent
 // to another type, and use the INFER_TYPE constant to indicate a type is not solved
 // yet.
@@ -154,14 +154,7 @@ pub fn convert_infer_type(
 }
 
 pub fn check_stmt(ast: &mut Ast, env: &mut Env, stmt: StmtIdx) -> Result<(), Error> {
-    match ast[stmt].kind {
-        StmtKind::Noop => {}
-        StmtKind::Expr(expr) => core::mem::drop(check_expr(ast, env, expr)?),
-        StmtKind::Decl(decl) => check_decl(ast, env, decl)?,
-        _ => unimplemented!(),
-    }
-
-    return Ok(());
+    unimplemented!()
 }
 
 pub fn check_decl(ast: &mut Ast, env: &mut Env, decl: DeclIdx) -> Result<(), Error> {
