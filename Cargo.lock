@@ -46,6 +46,7 @@ dependencies = [
  "hashbrown",
  "interloc",
  "lazy_static",
+ "peg",
  "serde",
  "serde_json",
  "siphasher",
@@ -141,6 +142,30 @@ dependencies = [
  "rustc_version",
  "smallvec",
  "winapi",
+]
+
+[[package]]
+name = "peg"
+version = "0.6.3"
+dependencies = [
+ "peg-macros",
+ "peg-runtime",
+]
+
+[[package]]
+name = "peg-macros"
+version = "0.6.3"
+dependencies = [
+ "peg-runtime",
+ "proc-macro2",
+ "quote",
+]
+
+[[package]]
+name = "peg-runtime"
+version = "0.6.3"
+dependencies = [
+ "hashbrown",
 ]
 
 [[package]]

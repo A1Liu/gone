@@ -1,0 +1,44 @@
+a := (ty: type) type => {
+  out := struct {
+    inner: ty,
+  }
+
+  for ty.methods {
+    if it.params.len == 0 || it.params[0] == ty.pointer_to() {
+      continue
+    }
+
+    method := create_method_tree()
+
+    method.params = it.params.clone()
+    method.params[0].ty = out
+    stmt := #code return out.inner.#paste(it.name)(#paste(it.params[1..].join(",")))
+    method.text.push(stmt)
+
+    out.add_method(method)
+  }
+
+  return type_check(out)
+}
+
+a := (ty: type) type => {
+  out := StructDefn.new()
+  out.add_field("inner", ty);
+
+  for ty.methods {
+    if it.params.len == 0 || it.params[0] == ty.pointer_to() {
+      continue
+    }
+
+    method := create_method_tree()
+
+    method.params = it.params.clone()
+    method.params[0].ty = out
+    names := it.params[1..].join(",")
+    stmt := parse("return out.inner.%(%)", it.name, names)
+    method.text.push(stmt)
+    out.add_method(method)
+  }
+
+  return type_check_struct(out)
+}
