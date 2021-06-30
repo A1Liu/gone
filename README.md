@@ -1,26 +1,27 @@
 # Gone
-Gone is a programming language built on plagiarising features from other languages.
+Gone will be a programming language built on plagiarising features from other
+languages.
 
 ## Features
 All of these are todo.
 
+- Logging/printing from go's interface.
 - Structs from Go
 - Enums from Rust
 - Pattern matching from Rust
 - For loops from Jai
-- Gradual typing
-- Type inference from Rust
+- Type inference from Rust/Jai
 - Checked type casting from Java and Go
 - Meta-classes from Zig/Jai
 - Reflection from Java
-- `any` type from TypeScript
-- Garbage collection from GO
-- Function overloading from Jai/C++/Java
+- "Any" type from Jai
 - Macros from Jai
 - Structural Polymorphism from Jai
 - Defer from Jai
-- Light conditional compilation from Rust
+- Light conditional compilation from Jai
 - Light operator overloading from Jai
+- Polymorphic function deduplication?
+- Keyword arguments and default arguments from Jai
 
 ## Goals
 The goal of this language is to make it easier to ship medium quality software. Thus,
@@ -45,36 +46,4 @@ the philosophy of the compiler should be to optimize first and foremost for:
   in most cases succeed.
 - **Binary compatibility** - Programs will be compiled from source each time.
 - **Incremental compilation** - Programs will be compiled from source each time.
-
-## Implementation Problems
-- How do we make garbage collection behave at runtime like manual memory management?
-  - Objects typically lie in a few patterns
-    - Arrays
-    - Trees
-    - Graphs
-
-    Ideally, we'd support good garbage collection for all of them, but that's
-    probably a bit too hard.
-  - Do we need garbage collection? We can probably make the same static guarrantees
-    about pointer validity without the need for garbage collection. And without GC,
-    the runtime becomes much smaller, and easier to implement.
-
-- How do we do lifetime analysis, especially for recursive functions, without annotations?
-- How do we handle types at compile time?
-- How do we handle methods?
-  - Methods are just functions with the type as the first parameter.
-- How do we test in a way thats easy to write and easy to rewrite?
-  - Fuzzing functions
-  - Fuzzing/Testing interfaces
-  - 
-
-## Architecture
-Compiler passes:
-
-1. Lexing
-2. Parsing
-3. Declaration checking
-3. Looping type checker
-4. Memory management checker (insert GC calls, check lifetimes)
-5. Code generation
 
