@@ -1,0 +1,16 @@
+hello_outer := "Hello, ";
+world := "world!";
+
+main(hello_outer);
+
+hi := {
+  tmp := 12;
+  a := tmp + 13;
+  b := tmp + 14;
+  c := "my data";
+  d := "it's mine don touch it";
+};
+
+print(hi.a);
+print(hi.tmp);
+print(hi);

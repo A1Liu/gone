@@ -504,8 +504,6 @@ impl Deref for BucketListFactory {
 
 #[test]
 fn test_bucket_list() {
-    use alloc::vec;
-
     let bucket_list = BucketList::with_capacity(24);
     let vec = bucket_list.add_array(Vec::<usize>::new());
     let num = bucket_list.add(12);

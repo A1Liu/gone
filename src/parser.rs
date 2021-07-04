@@ -10,6 +10,16 @@ pub struct Symbols {
     pub next: u32,
 }
 
+impl Symbols {
+    pub fn new() -> RefCell<Symbols> {
+        let sym = Symbols {
+            table: HashMap::new(),
+            next: 0,
+        };
+        return RefCell::new(sym);
+    }
+}
+
 lazy_static! {
     static ref KEYWORDS: HashMap<&'static str, ()> = {
         let mut map = HashMap::new();
@@ -30,17 +40,18 @@ lazy_static! {
 }
 
 peg::parser! {
-  grammar parser(a: &BucketList<'static>, sym: &RefCell<Symbols>) for str {
+  pub grammar lang_grammar(a: &BucketList<'static>, sym: &RefCell<Symbols>) for str {
     rule _() = [' ' | '\t' | '\n' | '\r']*
-    rule semi() = _? ";" _?
-    rule comma() = _? "," _?
+    rule semi() = _ ";" _
+    rule comma() = _ "," _
+    rule pipe() = _ "|" _
 
     rule number() -> Spanned<u64> = b:position!() n:$(['0'..='9']+) e:position!()
     {? n.parse().map(|n| span(n, b, e)).or(Err("u64")) }
     rule simple_string() -> &'input str = "\"" s:$( ("\\\"" / [^ '"'])* ) "\"" { s }
     rule ident() -> Spanned<u32> =
         b:position!()
-        id:$(['a'..='z' | 'A'..='Z' | '_'] ['a'..='z' | 'A'..='Z' | '_' | '0'..='9'])
+        id:$(['a'..='z' | 'A'..='Z' | '_'] ['a'..='z' | 'A'..='Z' | '_' | '0'..='9']*)
         e:position!() {?
         if KEYWORDS.contains_key(id) {
             Err("ident was keyword")
@@ -97,7 +108,7 @@ peg::parser! {
             span(Expr::Call(a.add(x), a.add_array(params)), x.begin, e)
         }
         --
-        "(" _ e:simple_expr() _ ")" { e }
+        "(" _ x:simple_expr() _ ")" { x }
         s:string() { span(Expr::Str(s.inner), s.begin, s.end) }
         n:number() { span(Expr::Int(n.inner), n.begin, n.end) }
         id:ident() { span(Expr::Ident(id.inner), id.begin, id.end) }
@@ -128,15 +139,34 @@ peg::parser! {
         "[" _ ty:type_decl() _ "]" { TypeName::Slice(a.add(ty)) } /
         id:ident() { TypeName::Ident(id) }
 
-    rule type_decl() -> Spanned<Type> =
-        b:position!() ptr:("&"?) name:type_name() e:position!() {
-            let ty = Type { name, pointer: ptr.is_some() };
+    rule type_decl_ref() -> Spanned<Type> =
+        b:position!() ptr:("&"?) _ x:type_name() e:position!() {
+            let ty = Type { name: x, pointer: ptr.is_some() };
             span(ty, b, e)
         }
 
+    rule type_decl_enum() -> Vec<Spanned<Type>> =
+        x:type_decl_ref() _ "|" _  rest:type_decl_enum() {
+            let mut rest = rest; // NOTE This should put things in reverse order
+            rest.push(x);
+            rest
+        } /
+        x:type_decl_ref() { vec![x] }
+
+    rule type_decl() -> Spanned<Type> = ty:type_decl_enum() {
+        if ty.len() == 1 {
+            ty[0]
+        } else {
+            let (begin, end) = (ty[ty.len() - 1].begin, ty[0].end);
+            assert!(begin < end);
+            let name = TypeName::Enum(a.add_array(ty));
+            span(Type { name, pointer: false }, begin, end)
+        }
+    }
+
     rule stmt() -> Spanned<Stmt> =
         b:position!() ";" e:position!() { span(Stmt::Nop, b, e) } /
-        b:position!() ids:(ident() ++ comma()) ":" _ tys:(type_decl() ** comma()) _
+        b:position!() ids:(ident() ++ comma()) _ ":" _ tys:(type_decl() ** comma()) _
         "=" _ exprs:(expr() ++ comma()) semi() e:position!() {?
             if ids.len() != exprs.len() {
                 Err("declaration length mismatch")
@@ -169,5 +199,8 @@ peg::parser! {
             let branch = BranchStmt { cond, if_true, if_false };
             span(Stmt::Branch(a.add(branch)), b, e)
         }
+
+    pub rule stmt_list() -> Vec<Spanned<Stmt>> = stmt()*
   }
+
 }

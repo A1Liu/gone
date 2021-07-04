@@ -9,7 +9,11 @@ pub struct Spanned<T: Copy> {
 }
 
 pub fn span<T: Copy>(inner: T, begin: usize, end: usize) -> Spanned<T> {
-    return Spanned { inner, begin, end };
+    return Spanned {
+        inner,
+        begin: begin,
+        end: end,
+    };
 }
 
 #[derive(Clone, Copy)]
@@ -78,6 +82,7 @@ pub enum Stmt {
 #[derive(Clone, Copy)]
 #[repr(C, u8)]
 pub enum TypeName {
+    Enum(&'static [Spanned<Type>]),
     Slice(&'static Spanned<Type>),
     Ident(Spanned<u32>),
     U64,
