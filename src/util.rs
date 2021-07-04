@@ -37,7 +37,6 @@ impl Error {
 
         let mut out = StringWriter::new();
         write!(out, "{}", self.info).unwrap();
-        write!(out, "{}", self.info).unwrap();
 
         if cfg!(debug_assertions) {
             let loc = self.compiler_loc;

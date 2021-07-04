@@ -1,16 +1,53 @@
-hello_outer := "Hello, ";
-world := "world!";
+hello_outer := "Hello, "
+world := "world!"
 
-main(hello_outer);
+main(hello_outer)
 
 hi := {
   tmp := 12;
-  a := tmp + 13;
-  b := tmp + 14;
-  c := "my data";
-  d := "it's mine don touch it";
-};
+  a := tmp + 13
+  b := tmp + 14
+  c := "my data"
+  d := "it's mine don touch it"
+}
 
-print(hi.a);
-print(hi.tmp);
-print(hi);
+print(hi.a)
+print(hi.tmp)
+print(hi)
+
+/* */
+/* a = 
+/* */ */
+
+a := if 12 13 else 14
+
+let an_integer = 1u32;
+let a_boolean = true;
+let unit = ();
+
+// copy `an_integer` into `copied_integer`
+let copied_integer = an_integer;
+
+println("An integer: {:?}", copied_integer);
+println("A boolean: {:?}", a_boolean);
+println("Meet the unit value: {:?}", unit);
+
+// The compiler warns about unused variable bindings; these warnings can
+// be silenced by prefixing the variable name with an underscore
+let _unused_variable = 3u32;
+
+let noisy_unused_variable = 2u32;
+// FIXME ^ Prefix with an underscore to suppress the warning
+
+match number {
+    // Match a single value
+    1 => println("One!"),
+    // Match several values
+    2 | 3 | 5 | 7 | 11 => println("This is a prime"),
+    // TODO ^ Try adding 13 to the list of prime values
+    // Match an inclusive range
+    13..=19 => println("A teen"),
+    // Handle the rest of cases
+    _ => println("Ain't special"),
+    // TODO ^ Try commenting out this catch-all arm
+}

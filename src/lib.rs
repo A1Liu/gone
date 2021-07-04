@@ -22,16 +22,17 @@ fn compile(files: &filedb::FileDb) -> Result<(), Vec<Error>> {
     let allocator = buckets::BucketList::with_capacity(4096);
     let mut asts = Vec::with_capacity(ids.len());
     let mut errs = Vec::new();
-    let symbols = Symbols::new();
+    let symbols = Symbols::new(&*allocator);
     for id in ids {
         let source = files.source(id).unwrap();
-        let ast = match lang_grammar::stmt_list(source, &allocator, &symbols) {
+        let ast = match lang_grammar::stmt_list(source, &*allocator, &symbols) {
             Ok(ast) => ast,
             Err(e) => {
                 errs.push((id, e));
                 continue;
             }
         };
+        eprintln!("{:#?}", ast);
         asts.push(ast);
     }
 
