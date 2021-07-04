@@ -3,9 +3,7 @@ use core::ops::{Deref, DerefMut};
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
 use core::{cmp, fmt, mem, ptr, slice, str};
-use std::alloc::{alloc, dealloc, Layout, LayoutErr};
-
-use std::vec::Vec;
+use std::alloc::{alloc, dealloc, Layout, LayoutError};
 
 const INITIAL_BUCKET_SIZE: usize = 2048 - mem::size_of::<BucketListInner>();
 
@@ -98,7 +96,7 @@ pub trait Allocator<'a> {
         }
     }
 
-    fn uninit(&self, len: usize, align: usize) -> Result<&'a mut [u8], LayoutErr> {
+    fn uninit(&self, len: usize, align: usize) -> Result<&'a mut [u8], LayoutError> {
         let layout = Layout::from_size_align(len, align)?;
         unsafe {
             let block = self.alloc(layout) as *mut u8;
@@ -106,7 +104,7 @@ pub trait Allocator<'a> {
         }
     }
 
-    fn build_array<T: Copy, F>(&self, len: usize, mut f: F) -> Result<&'a mut [T], LayoutErr>
+    fn build_array<T: Copy, F>(&self, len: usize, mut f: F) -> Result<&'a mut [T], LayoutError>
     where
         F: FnMut(usize) -> T,
     {
@@ -122,7 +120,7 @@ pub trait Allocator<'a> {
         }
     }
 
-    fn frame(&self, len: usize) -> Result<Frame<'a>, LayoutErr> {
+    fn frame(&self, len: usize) -> Result<Frame<'a>, LayoutError> {
         let data = self.uninit(len, 16)?;
         let bump = AtomicUsize::new(0);
         return Ok(Frame { data, bump });
