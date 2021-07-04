@@ -16,9 +16,6 @@ lazy_static! {
         map.insert("u64", ());
         map.insert("string", ());
 
-        map.insert("var", ());
-        map.insert("const", ());
-
         map.insert("_", ());
         map.insert("for", ());
         map.insert("or", ());
@@ -139,11 +136,9 @@ peg::parser! {
 
     rule stmt() -> Spanned<Stmt> =
         b:position!() ";" e:position!() { span(Stmt::Nop, b, e) } /
-        b:position!() ids:(ident() ++ comma()) ":" tys:(type_decl() ** comma()) "="
-        exprs:(expr() ++ comma()) semi() e:position!() {?
+        b:position!() ids:(ident() ++ comma()) ":" _ tys:(type_decl() ** comma()) _
+        "=" _ exprs:(expr() ++ comma()) semi() e:position!() {?
             if ids.len() != exprs.len() {
-                Err("declaration length mismatch")
-            } else if tys.len() != ids.len() && tys.len() != 0 {
                 Err("declaration length mismatch")
             } else if tys.len() == 0 {
                 let mut decls = Vec::with_capacity(ids.len());
@@ -155,6 +150,8 @@ peg::parser! {
                 }
 
                 Ok(span(Stmt::Decl(a.add_array(decls)), b, e))
+            } else if tys.len() != ids.len() {
+                Err("type declaration length mismatch")
             } else {
                 let mut decls = Vec::with_capacity(ids.len());
                 let iter = ids.into_iter().zip(tys.into_iter()).zip(exprs.into_iter());
