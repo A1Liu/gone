@@ -39,6 +39,10 @@ let _unused_variable = 3u32;
 let noisy_unused_variable = 2u32;
 // FIXME ^ Prefix with an underscore to suppress the warning
 
+let number = 13;
+    // TODO ^ Try different values for `number`
+
+println("Tell me about {}", number);
 match number {
     // Match a single value
     1 => println("One!"),
@@ -51,3 +55,14 @@ match number {
     _ => println("Ain't special"),
     // TODO ^ Try commenting out this catch-all arm
 }
+
+let boolean = true;
+// Match is an expression too
+let binary = match boolean {
+    // The arms of a match must cover all the possible values
+    false => 0,
+    true => 1,
+    // TODO ^ Try commenting out one of these arms
+};
+
+println("{} -> {}", boolean, binary);

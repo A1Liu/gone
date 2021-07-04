@@ -1,9 +1,8 @@
-use serde::Serialize;
 use std::fmt;
 
-#[derive(Clone, Copy, Serialize)]
+#[derive(Clone, Copy)]
 #[repr(C)]
-pub struct Spanned<T: Copy> {
+pub struct Spanned<T> {
     // TODO these could be u32's probably
     // TODO should this be a generic wrapper or just put as fields?
     pub inner: T,
@@ -11,13 +10,13 @@ pub struct Spanned<T: Copy> {
     pub end: usize,
 }
 
-impl<T: Copy + fmt::Debug> fmt::Debug for Spanned<T> {
+impl<T: fmt::Debug> fmt::Debug for Spanned<T> {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         return self.inner.fmt(fmt);
     }
 }
 
-pub fn span<T: Copy>(inner: T, begin: usize, end: usize) -> Spanned<T> {
+pub fn span<T>(inner: T, begin: usize, end: usize) -> Spanned<T> {
     return Spanned {
         inner,
         begin: begin,
@@ -25,7 +24,7 @@ pub fn span<T: Copy>(inner: T, begin: usize, end: usize) -> Spanned<T> {
     };
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy)]
 #[repr(u8)]
 pub enum BinOp {
     Add,
@@ -45,7 +44,7 @@ pub enum BinOp {
     InclusiveRange,
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy)]
 #[repr(C, u8)]
 pub enum Expr {
     Int(u64),
@@ -53,6 +52,8 @@ pub enum Expr {
     Ident(u32),
     Default,
     Tuple(&'static [Spanned<Expr>]),
+    True,
+    False,
 
     Bin(BinOp, &'static Spanned<Expr>, &'static Spanned<Expr>),
 
@@ -67,7 +68,7 @@ pub enum Expr {
     Call(&'static Spanned<Expr>, &'static [Spanned<Expr>]),
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct BranchExpr {
     pub cond: Spanned<Expr>,
@@ -75,7 +76,7 @@ pub struct BranchExpr {
     pub if_false: Spanned<Expr>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct Decl {
     pub id: Spanned<u32>,
@@ -83,14 +84,14 @@ pub struct Decl {
     pub expr: Spanned<Expr>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct Destructure {
     pub pat: Spanned<Pattern>,
     pub expr: Spanned<Expr>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy)]
 #[repr(C, u8)]
 pub enum Stmt {
     Expr(Expr),
@@ -100,7 +101,7 @@ pub enum Stmt {
     Nop,
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy)]
 #[repr(C, u8)]
 pub enum TypeName {
     Struct(&'static [Decl]),
@@ -111,24 +112,25 @@ pub enum TypeName {
     Ident(Spanned<u32>),
     U64,
     String,
+    Bool,
     None,
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct Type {
     pub name: TypeName,
     pub pointer: bool,
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct PatternStructDecl {
     pub id: Spanned<u32>,
     pub pat: Spanned<Pattern>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy)]
 #[repr(C, u8)]
 pub enum PatternName {
     Struct(&'static [PatternStructDecl]),
@@ -139,21 +141,21 @@ pub enum PatternName {
     None,
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct Pattern {
     pub name: PatternName,
     pub pointer: bool,
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct MatchArm {
     pub pat: Spanned<Pattern>,
     pub expr: Spanned<Expr>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct MatchBlock {
     pub expr: Spanned<Expr>,

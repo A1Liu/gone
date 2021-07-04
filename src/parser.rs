@@ -50,6 +50,8 @@ lazy_static! {
 
         map.insert("u64", ());
         map.insert("string", ());
+        map.insert("true", ());
+        map.insert("false", ());
 
         map.insert("let", ());
         map.insert("type", ());
@@ -98,15 +100,17 @@ peg::parser! {
     rule semi() = ";" _
     rule comma() -> () = _ "," _
 
-    rule number() -> Spanned<u64> = b:position!() n:$(['0'..='9']+) e:position!()
-    {? n.parse().map(|n| span(n, b, e)).or(Err("u64")) }
+    rule spanned<T>(r: rule<T>) -> Spanned<T> = b:position!() res:r() e:position!() {
+        span(res, b, e)
+    }
+
+    rule number() -> Spanned<u64> = spanned(<n:$(['0'..='9']+) {? n.parse().or(Err("u64")) }>)
     rule simple_string() -> String = "\"" s:$( ("\\\"" / [^ '"'])* ) "\"" {?
         unescape::unescape(s).ok_or("failed to parse string literal") }
     rule ident_trailing() = ['a'..='z' | 'A'..='Z' | '_' | '0'..='9']
     rule ident() -> Spanned<u32> =
         b:position!()
-        id:$(['a'..='z' | 'A'..='Z' | '_'] ident_trailing()*)
-        e:position!() {?
+        id:$(['a'..='z' | 'A'..='Z' | '_'] ident_trailing()*) e:position!() {?
         if KEYWORDS.contains_key(id) {
             Err("ident was keyword")
         } else {
@@ -130,6 +134,8 @@ peg::parser! {
                 _ => span(Expr::Tuple(a.add_array(es)), b, e),
             }
         }
+
+    rule boolean() -> Spanned<bool> = spanned(<"true" { true } / "false" { false }>)
 
     rule simple_expr() -> Spanned<Expr> = precedence! {
         x:(@) _ "..<" _ y:@ { bin_op_span(a, BinOp::Range, x, y) }
@@ -169,6 +175,7 @@ peg::parser! {
         s:string() { span(Expr::Str(s.inner), s.begin, s.end) }
         n:number() { span(Expr::Int(n.inner), n.begin, n.end) }
         id:ident() { span(Expr::Ident(id.inner), id.begin, id.end) }
+        b:boolean() { span(if b.inner { Expr::True } else { Expr::False }, b.begin, b.end) }
     }
 
     rule expr() -> Spanned<Expr> =
@@ -195,15 +202,14 @@ peg::parser! {
     }
 
     rule match_block() -> Spanned<MatchBlock> =
-        b:position!() "match" _ expr:expr() _ "{" _
-        arms:(match_arm() ** _) _ "}" e:position!() {
-        span(MatchBlock { expr, arms: a.add_array(arms) }, b, e)
-    }
+        spanned(<"match" _ expr:expr() _ "{" _ arms:(match_arm() ** _) _ "}"
+            { MatchBlock { expr, arms: a.add_array(arms) } }>)
 
 
     rule type_name() -> TypeName =
         "u64" !ident_trailing() { TypeName::U64 } /
         "string" !ident_trailing() { TypeName::String } /
+        "bool" !ident_trailing() { TypeName::Bool } /
         id:ident() { TypeName::Ident(id) } /
         "$" id:ident() { TypeName::PolymorphDecl(id) } /
         "[" _ ty:type_decl() _ "]" { TypeName::Slice(a.add(ty)) } /
@@ -218,10 +224,7 @@ peg::parser! {
         "(" _ tys:(type_decl() ** comma()) _ ")" { TypeName::Tuple(&*a.add_array(tys)) }
 
     rule type_decl_ref() -> Spanned<Type> =
-        b:position!() ptr:("&"?) _ x:type_name() e:position!() {
-            let ty = Type { name: x, pointer: ptr.is_some() };
-            span(ty, b, e)
-        }
+        spanned(<ptr:("&"?) _ x:type_name() { Type { name: x, pointer: ptr.is_some() } }>)
 
     rule type_decl_enum() -> Vec<Spanned<Type>> =
         x:type_decl_ref() _ "|" _  rest:type_decl_enum() {
@@ -345,8 +348,8 @@ peg::parser! {
 
 
     rule stmt() -> Spanned<Stmt> =
-        b:position!() semi() e:position!() { span(Stmt::Nop, b, e) } /
-        b:position!() d:decl() e:position!() { span(Stmt::Decl(a.add_array(d)), b, e) } /
+        spanned(<semi() { Stmt::Nop }>) /
+        spanned(<d:decl() { Stmt::Decl(a.add_array(d)) }>) /
         b:position!() "type" _ id:ident() _ params:type_params()? _ ty:type_decl() {
             let params = params.map(|p| &*a.add_array(p)).unwrap_or(&[]);
             span(Stmt::Type(ty.inner, params), b, ty.end) } /

@@ -5,12 +5,14 @@ languages.
 ## Features
 All of these are todo.
 
-- Logging/printing from go's interface.
+- Generators from Python/Rust unstable
+- For loops from Java
+- Closures from Go
+- Logging/printing from Go
 - Structs from Go
 - Enums from Rust
 - Pattern matching from Rust
-- For loops from Jai
-- Type inference from Rust/Jai
+- Simple type inference
 - Checked type casting from Java and Go
 - Meta-classes from Zig/Jai
 - Reflection from Java
