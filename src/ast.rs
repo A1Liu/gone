@@ -1,5 +1,5 @@
-#[repr(C)]
 #[derive(Clone, Copy)]
+#[repr(C)]
 pub struct Spanned<T: Copy> {
     // TODO these could be u32's probably
     // TODO should this be a generic wrapper or just put as fields?
@@ -38,6 +38,7 @@ pub enum Expr {
 
     Block(&'static [Spanned<Stmt>]),
     Branch(&'static BranchExpr),
+    Call(&'static Spanned<Expr>, &'static [Spanned<Expr>]),
 }
 
 #[derive(Clone, Copy)]
@@ -57,10 +58,36 @@ pub struct BranchStmt {
 }
 
 #[derive(Clone, Copy)]
+#[repr(C)]
+pub struct Decl {
+    pub id: Spanned<u32>,
+    pub ty: Spanned<Type>,
+    pub expr: Spanned<Expr>,
+}
+
+#[derive(Clone, Copy)]
 #[repr(C, u8)]
 pub enum Stmt {
     Expr(Expr),
     Block(&'static [Spanned<Stmt>]),
     Branch(&'static BranchStmt),
+    Decl(&'static [Decl]),
     Nop,
+}
+
+#[derive(Clone, Copy)]
+#[repr(C, u8)]
+pub enum TypeName {
+    Slice(&'static Spanned<Type>),
+    Ident(Spanned<u32>),
+    U64,
+    String,
+    None,
+}
+
+#[derive(Clone, Copy)]
+#[repr(C)]
+pub struct Type {
+    pub name: TypeName,
+    pub pointer: bool,
 }
