@@ -101,11 +101,10 @@ peg::parser! {
 
     rule block_comment() = "/*" block_comment_internal() "*/"
 
-    rule closing() -> () = &"}" / &")" / &"]"
     rule _() = quiet!{ (whitespace() / line_comment() / block_comment())* }
     rule semantic_split() =
         quiet!{ (nbspace() / block_comment())* }
-        (quiet!{ line_comment() } / newline() / semi() / _ closing()) _
+        (quiet!{ line_comment() } / newline() / semi() / _ &"}") _
 
     rule semi() = ";" _
     rule comma() -> () = _ "," _
@@ -151,12 +150,8 @@ peg::parser! {
             }
         }
 
-    rule boolean() -> Spanned<bool> = spanned(<key("true") { true } / key("false") { false }>)
-
-    rule none_value() -> Spanned<()> = spanned(<key("None")>)
-
     rule simple_expr() -> Spanned<Expr> = precedence! {
-        x:(@) _ "..<" _ y:@ { bin_op_span(a, BinOp::Range, x, y) }
+        x:(@) _ ".." _ y:@ { bin_op_span(a, BinOp::Range, x, y) }
         x:(@) _ "..=" _ y:@ { bin_op_span(a, BinOp::InclusiveRange, x, y) }
         --
         x:(@) _ key("or") _ y:@ { bin_op_span(a, BinOp::Or, x, y) }
@@ -178,23 +173,30 @@ peg::parser! {
         --
         x:(@) _ "+" _ y:@ { bin_op_span(a, BinOp::Add, x, y) }
         --
-        x:(@) _ "*" _ y:@ { bin_op_span(a, BinOp::Mult, x, y) }
+        x:(@) _ ("*" !"*") _ y:@ { bin_op_span(a, BinOp::Mult, x, y) }
         --
         b:position!() key("not") _ x:@ { span(Expr::Not(a.add(x)), b, x.end) }
         b:position!() "&" _ x:@ { span(Expr::Ref(a.add(x)), b, x.end) }
         b:position!() "^" _ x:@ { span(Expr::Deref(a.add(x)), b, x.end) }
+        b:position!() "**" _ x:@ { span(Expr::Splat(a.add(x)), b, x.end) }
+        b:position!() ".." _ y:@ {
+            bin_op_span(a, BinOp::Range, span(Expr::Int(0),b, y.end), y) }
+        b:position!() "..=" _ y:@ {
+            bin_op_span(a, BinOp::InclusiveRange, span(Expr::Int(0),b, y.end), y) }
         --
-        x:@ _ "." _ id:ident() { span(Expr::Field(a.add(x), id), x.begin, id.end) }
+        x:@ _ ("." !".") _ id:ident() { span(Expr::Field(a.add(x), id), x.begin, id.end) }
         x:@ quiet!{ nbspace()* } "(" _ params:(expr() ** comma()) _ ")" e:position!() {
             span(Expr::Call(a.add(x), a.add_array(params)), x.begin, e)
         }
-        x:@ _ "..." e:position!() { span(Expr::Splat(a.add(x)), x.begin, e) }
+        x:@ _ (".." !".") e:position!() { span(Expr::LowerBoundedRange(a.add(x)), x.begin, e) }
         --
         p:paren_expr() { p }
         s:string() { span(Expr::Str(s.inner), s.begin, s.end) }
         n:number() { span(Expr::Int(n.inner), n.begin, n.end) }
         id:ident() { span(Expr::Ident(id.inner), id.begin, id.end) }
-        b:boolean() { span(if b.inner { Expr::True } else { Expr::False }, b.begin, b.end) }
+        s:spanned(<key("true") { Expr::True } / key("false") { Expr::False }>) { s }
+        s:spanned(<key("None") { Expr::NoneValue }>) { s }
+        s:spanned(<(".." !".") { Expr::FullRange }>) { s }
     }
 
     rule expr() -> Spanned<Expr> =
@@ -232,7 +234,7 @@ peg::parser! {
         id:ident() { TypeName::Ident(id) } /
         "$" id:ident() { TypeName::PolymorphDecl(id) } /
         "[" _ ty:type_decl_ref() _ "]" { TypeName::Slice(a.add(ty)) } /
-        "{" _ decls:strict(<decl()>)* _ run(<{ dbg!(1) }>) "}" run(<{ dbg!(3) }>) {
+        "{" _ decls:strict(<decl()>)* _ "}" {
             let mut len = 0;
             // let mut last = last.unwrap_or(Vec::new());
             for decl_list in &decls { len += decl_list.len(); }
@@ -284,7 +286,7 @@ peg::parser! {
 
     rule pattern_name() -> PatternName =
         expr:expr() { PatternName::Expr(expr) } /
-        "_" { PatternName::None } /
+        "_" { PatternName::IgnoreValue } /
         "[" _ pats:(pattern() ** comma()) _ "]" { PatternName::Slice(a.add_array(pats)) } /
         "{" _ pats:strict(<pattern_decl()>)*  _ "}" { PatternName::Struct(&*a.add_array(pats)) } /
         "(" _ pats:(pattern() ** comma()) _ ")" { PatternName::Tuple(&*a.add_array(pats)) }
@@ -322,7 +324,6 @@ peg::parser! {
         tys:(type_decl() ++ comma()) _ exprs:decl_eq_exprs()? { (Some(tys), exprs) }
 
     rule decl() -> Vec<Decl> = ids:(ident() ++ comma()) _ ":" _ end:decl_end() {?
-        dbg!();
         let (tys, exprs) = end;
         match (tys, exprs) {
             (Some(tys), Some(exprs)) => {
@@ -344,7 +345,7 @@ peg::parser! {
                 } else {
                     let mut decls = Vec::with_capacity(ids.len());
                     let iter = ids.into_iter().zip(exprs.into_iter());
-                    let ty = Type { name: TypeName::None, ptr: false };
+                    let ty = Type { name: TypeName::InferType, ptr: false };
                     let create_ty = |id: Spanned<u32>| span(ty, id.begin, id.end);
                     for (id, expr) in iter {
                         decls.push(Decl { id, ty: create_ty(id), expr });

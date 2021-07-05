@@ -40,8 +40,11 @@ pub enum BinOp {
     Geq,
     LShift,
     RShift,
-    Range,
+
+    // a[0..=12] or a[..=12] (accesses values 0 and 12 and all in between)
     InclusiveRange,
+    // a[0..12] or a[..12] (accesses values 0 and 11 and all in between)
+    Range,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -54,6 +57,12 @@ pub enum Expr {
     Tuple(&'static [Spanned<Expr>]),
     True,
     False,
+    NoneValue,
+
+    // a[4..] (accesses element 4 and all elements after that)
+    LowerBoundedRange(&'static Spanned<Expr>),
+    // a[..] (accesses all elements)
+    FullRange,
 
     Bin(BinOp, &'static Spanned<Expr>, &'static Spanned<Expr>),
 
@@ -114,7 +123,7 @@ pub enum TypeName {
     U64,
     String,
     Bool,
-    None,
+    InferType,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -139,7 +148,7 @@ pub enum PatternName {
     Enum(&'static [Spanned<Pattern>]),
     Slice(&'static [Spanned<Pattern>]),
     Expr(Spanned<Expr>),
-    None,
+    IgnoreValue,
 }
 
 #[derive(Debug, Clone, Copy)]
