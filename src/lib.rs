@@ -2,19 +2,19 @@
 #![allow(unused_variables)]
 #![allow(unused_imports)]
 
-mod ast;
-mod buckets;
-mod filedb;
-mod parser;
+pub mod ast;
+pub mod buckets;
+pub mod filedb;
+pub mod parser;
 #[macro_use]
-mod util;
+pub mod util;
 
 #[cfg(test)]
-mod test;
+pub mod test;
 
 use util::*;
 
-fn compile(files: &filedb::FileDb) -> Result<(), Vec<Error>> {
+pub fn compile(files: &filedb::FileDb) -> Result<(), Vec<Error>> {
     use codespan_reporting::files::Files;
     use parser::*;
     let ids = files.file_ids();

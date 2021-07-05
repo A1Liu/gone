@@ -1,6 +1,7 @@
 use crate::ast::*;
 use crate::buckets::*;
 use core::cell::RefCell;
+use core::slice;
 use lazy_static::lazy_static;
 use std::collections::HashMap;
 
@@ -50,8 +51,12 @@ lazy_static! {
 
         map.insert("u64", ());
         map.insert("string", ());
+        map.insert("bool", ());
+        map.insert("Void", ());
+
         map.insert("true", ());
         map.insert("false", ());
+        map.insert("None", ());
 
         map.insert("let", ());
         map.insert("type", ());
@@ -62,6 +67,7 @@ lazy_static! {
         map.insert("else", ());
         map.insert("match", ());
 
+        map.insert("not", ());
         map.insert("or", ());
         map.insert("xor", ());
         map.insert("and", ());
@@ -81,9 +87,11 @@ fn bin_op_span(
 
 peg::parser! {
   pub grammar lang_grammar(a: &BucketList<'static>, sym: &RefCell<Symbols>) for str {
+    use peg::ParseLiteral;
+
     rule nbspace() = [' ' | '\t']
     rule newline() = "\n" / "\r\n"
-    rule whitespace() = (nbspace() / newline())+
+    rule whitespace() = (nbspace() / newline())
     rule line_comment() = "//" [^ '\r' | '\n']* newline()
     rule block_comment_internal() = // TODO do these actually work?
         [^ '*' | '/' ]* "**" block_comment_internal() /
@@ -93,9 +101,11 @@ peg::parser! {
 
     rule block_comment() = "/*" block_comment_internal() "*/"
 
+    rule closing() -> () = &"}" / &")" / &"]"
     rule _() = quiet!{ (whitespace() / line_comment() / block_comment())* }
     rule semantic_split() =
-        quiet!{ (nbspace() / block_comment())* } (line_comment() / newline() / semi())
+        quiet!{ (nbspace() / block_comment())* }
+        (quiet!{ line_comment() } / newline() / semi() / _ closing()) _
 
     rule semi() = ";" _
     rule comma() -> () = _ "," _
@@ -103,6 +113,12 @@ peg::parser! {
     rule spanned<T>(r: rule<T>) -> Spanned<T> = b:position!() res:r() e:position!() {
         span(res, b, e)
     }
+
+    rule run<T>(r: rule<T>) -> () = r() { () }
+
+    rule key(k: &'static str) -> () = ##parse_string_literal(k) !ident_trailing()
+
+    rule strict<T>(r: rule<T>) -> T = res:r() semantic_split() _ { res }
 
     rule number() -> Spanned<u64> = spanned(<n:$(['0'..='9']+) {? n.parse().or(Err("u64")) }>)
     rule simple_string() -> String = "\"" s:$( ("\\\"" / [^ '"'])* ) "\"" {?
@@ -135,17 +151,19 @@ peg::parser! {
             }
         }
 
-    rule boolean() -> Spanned<bool> = spanned(<"true" { true } / "false" { false }>)
+    rule boolean() -> Spanned<bool> = spanned(<key("true") { true } / key("false") { false }>)
+
+    rule none_value() -> Spanned<()> = spanned(<key("None")>)
 
     rule simple_expr() -> Spanned<Expr> = precedence! {
         x:(@) _ "..<" _ y:@ { bin_op_span(a, BinOp::Range, x, y) }
         x:(@) _ "..=" _ y:@ { bin_op_span(a, BinOp::InclusiveRange, x, y) }
         --
-        x:(@) _ "or" _ y:@ { bin_op_span(a, BinOp::Or, x, y) }
+        x:(@) _ key("or") _ y:@ { bin_op_span(a, BinOp::Or, x, y) }
         --
-        x:(@) _ "xor" _ y:@ { bin_op_span(a, BinOp::Xor, x, y) }
+        x:(@) _ key("xor") _ y:@ { bin_op_span(a, BinOp::Xor, x, y) }
         --
-        x:(@) _ "and" _ y:@ { bin_op_span(a, BinOp::And, x, y) }
+        x:(@) _ key("and") _ y:@ { bin_op_span(a, BinOp::And, x, y) }
         --
         x:(@) _ "!=" _ y:@ { bin_op_span(a, BinOp::Neq, x, y) }
         x:(@) _ "==" _ y:@ { bin_op_span(a, BinOp::Eq, x, y) }
@@ -162,6 +180,7 @@ peg::parser! {
         --
         x:(@) _ "*" _ y:@ { bin_op_span(a, BinOp::Mult, x, y) }
         --
+        b:position!() key("not") _ x:@ { span(Expr::Not(a.add(x)), b, x.end) }
         b:position!() "&" _ x:@ { span(Expr::Ref(a.add(x)), b, x.end) }
         b:position!() "^" _ x:@ { span(Expr::Deref(a.add(x)), b, x.end) }
         --
@@ -179,7 +198,7 @@ peg::parser! {
     }
 
     rule expr() -> Spanned<Expr> =
-        b:position!() "if" _ cond:expr() _ if_true:expr() _ "else" _
+        b:position!() key("if") _ cond:expr() _ if_true:expr() _ key("else") _
         if_false:expr() e:position!() {
             let branch = BranchExpr { cond, if_true, if_false };
             span(Expr::Branch(a.add(branch)), b, e)
@@ -189,7 +208,7 @@ peg::parser! {
         e:simple_expr() { e }
 
     rule block() -> Spanned<&'static [Spanned<Stmt>]> =
-        b:position!() "{" _ stmts:(stmt()*) expr:expr()? _ "}" e:position!() {
+        b:position!() "{" _ stmts:(stmt()*) _ expr:expr()? _ "}" e:position!() {
             let mut stmts = stmts;
             if let Some(expr) = expr {
                 stmts.push(span(Stmt::Expr(expr.inner), expr.begin, expr.end));
@@ -202,79 +221,77 @@ peg::parser! {
     }
 
     rule match_block() -> Spanned<MatchBlock> =
-        spanned(<"match" _ expr:expr() _ "{" _ arms:(match_arm() ** _) _ "}"
+        spanned(<key("match") _ expr:expr() _ "{" _ arms:(match_arm() ** _) _ "}"
             { MatchBlock { expr, arms: a.add_array(arms) } }>)
 
-
     rule type_name() -> TypeName =
-        "u64" !ident_trailing() { TypeName::U64 } /
-        "string" !ident_trailing() { TypeName::String } /
-        "bool" !ident_trailing() { TypeName::Bool } /
+        key("u64") { TypeName::U64 } /
+        key("string") { TypeName::String } /
+        key("bool") { TypeName::Bool } /
+        key("Void") { TypeName::Tuple(&[]) } /
         id:ident() { TypeName::Ident(id) } /
         "$" id:ident() { TypeName::PolymorphDecl(id) } /
-        "[" _ ty:type_decl() _ "]" { TypeName::Slice(a.add(ty)) } /
-        "{" _ decls:decl()*  _ "}" {
+        "[" _ ty:type_decl_ref() _ "]" { TypeName::Slice(a.add(ty)) } /
+        "{" _ decls:strict(<decl()>)* _ run(<{ dbg!(1) }>) "}" run(<{ dbg!(3) }>) {
             let mut len = 0;
+            // let mut last = last.unwrap_or(Vec::new());
             for decl_list in &decls { len += decl_list.len(); }
+            // len += last.len();
             let mut decl_out = Vec::with_capacity(len);
             for mut decl_list in decls { decl_out.append(&mut decl_list); }
+            // decl_out.append(&mut last);
 
             TypeName::Struct(&*a.add_array(decl_out))
         } /
-        "(" _ tys:(type_decl() ** comma()) _ ")" { TypeName::Tuple(&*a.add_array(tys)) }
+        "(" _ tys:(type_decl_ref() ** comma()) _ ")" { TypeName::Tuple(&*a.add_array(tys)) }
 
     rule type_decl_ref() -> Spanned<Type> =
-        spanned(<ptr:("&"?) _ x:type_name() { Type { name: x, pointer: ptr.is_some() } }>)
+        spanned(<ptr:("&"?) _ x:type_name() { Type { name: x, ptr: ptr.is_some() } }>)
 
-    rule type_decl_enum() -> Vec<Spanned<Type>> =
-        x:type_decl_ref() _ "|" _  rest:type_decl_enum() {
-            let mut rest = rest; // NOTE This should put things in reverse order
-            rest.push(x);
-            rest
-        } /
-        x:type_decl_ref() { vec![x] }
+    rule type_decl_enum() -> Vec<Spanned<Type>> = tys:(type_decl_ref() ++ (_ "|" _)) { tys }
 
     rule type_decl() -> Spanned<Type> = tys:type_decl_enum() {?
         if tys.len() == 1 {
             Ok(tys[0])
         } else {
-            let (begin, end) = (tys[tys.len() - 1].begin, tys[0].end);
+            let (begin, end) = (tys[0].begin, tys[tys.len() - 1].end);
             assert!(begin < end);
-            let has_complex_type = |tys: &[Spanned<Type>]| -> bool {
+            fn has_complex_type(tys: &[Spanned<Type>]) -> bool {
                 for ty in tys {
                     match ty.inner.name {
-                        TypeName::Slice(_)
-                        | TypeName::Struct(_)
+                        TypeName::Struct(_)
                         | TypeName::Tuple(_) => return true,
+                        TypeName::Slice(ty) => return has_complex_type(slice::from_ref(ty)),
                         _ => {}
                     }
                 }
 
                 return false;
-            };
+            }
 
             if has_complex_type(&tys) {
-                Err("dude make an alias")
+                Err("if you don't give your nested types a name, you won't be
+                    able to refer to them")
             } else {
                 let name = TypeName::Enum(a.add_array(tys));
-                Ok(span(Type { name, pointer: false }, begin, end))
+                Ok(span(Type { name, ptr: false }, begin, end))
             }
         }
     }
 
     rule pattern_decl() -> PatternStructDecl =
-        id:ident() _ ":" _ pat:pattern() _ semi()? { PatternStructDecl { id, pat } }
+        id:ident() _ ":" _ pat:pattern() { PatternStructDecl { id, pat } }
 
     rule pattern_name() -> PatternName =
         expr:expr() { PatternName::Expr(expr) } /
         "_" { PatternName::None } /
         "[" _ pats:(pattern() ** comma()) _ "]" { PatternName::Slice(a.add_array(pats)) } /
-        "{" _ pats:pattern_decl()*  _ "}" { PatternName::Struct(&*a.add_array(pats)) } /
+        "{" _ pats:strict(<pattern_decl()>)*  _ "}" { PatternName::Struct(&*a.add_array(pats)) } /
         "(" _ pats:(pattern() ** comma()) _ ")" { PatternName::Tuple(&*a.add_array(pats)) }
 
     rule pattern_ref() -> Spanned<Pattern> =
         b:position!() ptr:("&"?) _ name:pattern_name() e:position!() {
-            let pat = Pattern { name, pointer: ptr.is_some() };
+            let pat = Pattern { name, ptr: ptr.is_some() };
             span(pat, b, e)
         }
 
@@ -293,67 +310,78 @@ peg::parser! {
             let (begin, end) = (pats[pats.len() - 1].begin, pats[0].end);
             assert!(begin < end);
             let name = PatternName::Enum(a.add_array(pats));
-            span(Pattern { name, pointer: false }, begin, end)
+            span(Pattern { name, ptr: false }, begin, end)
         }
     }
 
-    rule decl_end() -> Vec<Spanned<Expr>> = "=" _ exprs:(expr() ++ comma()) { exprs }
+    rule decl_eq_exprs() -> Vec<Spanned<Expr>> =
+        "=" _ exprs:(expr() ++ comma()) { exprs }
 
-    rule decl() -> Vec<Decl> = ids:(ident() ++ comma()) _ ":" _ exprs:decl_end() _ semi()? {?
-        if ids.len() != exprs.len() {
-            Err("declaration length mismatch")
-        } else {
-            let mut decls = Vec::with_capacity(ids.len());
-            let iter = ids.into_iter().zip(exprs.into_iter());
-            let ty = Type { name: TypeName::None, pointer: false };
-            let create_ty = |id: Spanned<u32>| span(ty, id.begin, id.end);
-            for (id, expr) in iter {
-                decls.push(Decl { id, ty: create_ty(id), expr });
+    rule decl_end() -> (Option<Vec<Spanned<Type>>>, Option<Vec<Spanned<Expr>>>) =
+        exprs:decl_eq_exprs() { (None, Some(exprs)) } /
+        tys:(type_decl() ++ comma()) _ exprs:decl_eq_exprs()? { (Some(tys), exprs) }
+
+    rule decl() -> Vec<Decl> = ids:(ident() ++ comma()) _ ":" _ end:decl_end() {?
+        dbg!();
+        let (tys, exprs) = end;
+        match (tys, exprs) {
+            (Some(tys), Some(exprs)) => {
+                if ids.len() == tys.len() && tys.len() == exprs.len() {
+                    let mut decls = Vec::with_capacity(ids.len());
+                    let iter = ids.into_iter().zip(tys.into_iter()).zip(exprs.into_iter());
+                    for ((id, ty), expr) in iter {
+                        decls.push(Decl { id, ty, expr });
+                    }
+
+                    Ok(decls)
+                } else {
+                    Err("declaration length mismatch")
+                }
             }
+            (None, Some(exprs)) => {
+                if ids.len() != exprs.len() {
+                    Err("declaration length mismatch")
+                } else {
+                    let mut decls = Vec::with_capacity(ids.len());
+                    let iter = ids.into_iter().zip(exprs.into_iter());
+                    let ty = Type { name: TypeName::None, ptr: false };
+                    let create_ty = |id: Spanned<u32>| span(ty, id.begin, id.end);
+                    for (id, expr) in iter {
+                        decls.push(Decl { id, ty: create_ty(id), expr });
+                    }
 
-            Ok(decls)
-        }
-    } /
-        ids:(ident() ++ comma()) _ ":" _ tys:(type_decl() ++ comma()) _
-        exprs:decl_end() _ semi()? {?
-        if ids.len() == tys.len() && tys.len() == exprs.len() {
-            let mut decls = Vec::with_capacity(ids.len());
-            let iter = ids.into_iter().zip(tys.into_iter()).zip(exprs.into_iter());
-            for ((id, ty), expr) in iter {
-                decls.push(Decl { id, ty, expr });
+                    Ok(decls)
+                }
             }
+            (Some(tys), None) => {
+                if ids.len() != tys.len() {
+                    Err("declaration length mismatch")
+                } else {
+                    let mut decls = Vec::with_capacity(ids.len());
+                    let iter = ids.into_iter().zip(tys.into_iter());
+                    let create_expr = |id: Spanned<u32>| span(Expr::Default, id.begin, id.end);
+                    for (id, ty) in iter {
+                        decls.push(Decl { id, ty, expr: create_expr(id) });
+                    }
 
-            Ok(decls)
-        } else {
-            Err("declaration length mismatch")
-        }
-    } /
-        ids:(ident() ++ comma()) _ ":" _ tys:(type_decl() ++ comma()) _ semi()? {?
-        if ids.len() != tys.len() {
-            Err("declaration length mismatch")
-        } else {
-            let mut decls = Vec::with_capacity(ids.len());
-            let iter = ids.into_iter().zip(tys.into_iter());
-            let create_expr = |id: Spanned<u32>| span(Expr::Default, id.begin, id.end);
-            for (id, ty) in iter {
-                decls.push(Decl { id, ty, expr: create_expr(id) });
+                    Ok(decls)
+                }
             }
-
-            Ok(decls)
+            (None, None) => panic!("This shouldn't parse"),
         }
     }
 
     rule type_params() -> Vec<Spanned<u32>> =
-        "<" _ generics:(ident() ** comma()) _ ">" { generics }
+        "<" _ generics:(ident() ++ comma()) _ ">" { generics }
 
 
     rule stmt() -> Spanned<Stmt> =
         spanned(<semi() { Stmt::Nop }>) /
-        spanned(<d:decl() { Stmt::Decl(a.add_array(d)) }>) /
-        b:position!() "type" _ id:ident() _ params:type_params()? _ ty:type_decl() {
+        spanned(<strict(<d:decl() { Stmt::Decl(a.add_array(d)) }>)>) /
+        b:position!() key("type") _ id:ident() _ params:type_params()? _ ty:type_decl() {
             let params = params.map(|p| &*a.add_array(p)).unwrap_or(&[]);
             span(Stmt::Type(ty.inner, params), b, ty.end) } /
-        b:position!() "let" _ pat:pattern() _ "=" _ expr:expr() {
+        b:position!() key("let") _ pat:pattern() _ "=" _ expr:expr() {
             span(Stmt::Destructure(a.add(Destructure { pat, expr })), b, expr.end) } /
         e:expr() semantic_split() _ { span(Stmt::Expr(e.inner), e.begin, e.end) }
 

@@ -57,6 +57,7 @@ pub enum Expr {
 
     Bin(BinOp, &'static Spanned<Expr>, &'static Spanned<Expr>),
 
+    Not(&'static Spanned<Expr>),
     Ref(&'static Spanned<Expr>),
     Deref(&'static Spanned<Expr>),
     Field(&'static Spanned<Expr>, Spanned<u32>),
@@ -120,7 +121,7 @@ pub enum TypeName {
 #[repr(C)]
 pub struct Type {
     pub name: TypeName,
-    pub pointer: bool,
+    pub ptr: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -145,7 +146,7 @@ pub enum PatternName {
 #[repr(C)]
 pub struct Pattern {
     pub name: PatternName,
-    pub pointer: bool,
+    pub ptr: bool,
 }
 
 #[derive(Debug, Clone, Copy)]

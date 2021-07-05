@@ -1,3 +1,11 @@
+type Alpha {
+    a : (u64, string, { a:= 12 })
+}
+
+{ hello_outer := "Hello, " }
+
+type Beta { a := 12 }
+
 hello_outer := "Hello, "
 world := "world!"
 
