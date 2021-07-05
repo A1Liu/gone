@@ -70,7 +70,7 @@ pub struct Frame<'a> {
 pub trait Allocator<'a> {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8;
 
-    fn add<T: Copy>(&self, t: T) -> &'a mut T {
+    fn add<T>(&self, t: T) -> &'a mut T {
         unsafe {
             let location = self.alloc(Layout::new::<T>()) as *mut T;
             ptr::write(location, t);
@@ -104,7 +104,7 @@ pub trait Allocator<'a> {
         }
     }
 
-    fn build_array<T: Copy, F>(&self, len: usize, mut f: F) -> Result<&'a mut [T], LayoutError>
+    fn build_array<T, F>(&self, len: usize, mut f: F) -> Result<&'a mut [T], LayoutError>
     where
         F: FnMut(usize) -> T,
     {
@@ -116,6 +116,7 @@ pub trait Allocator<'a> {
                 ptr::write(location, f(idx));
                 location = location.add(1);
             }
+
             return Ok(slice::from_raw_parts_mut(block, len));
         }
     }
@@ -126,10 +127,7 @@ pub trait Allocator<'a> {
         return Ok(Frame { data, bump });
     }
 
-    fn add_array<T>(&self, vec: Vec<T>) -> &'a mut [T]
-    where
-        T: Copy,
-    {
+    fn add_array<T>(&self, vec: Vec<T>) -> &'a mut [T] {
         let mut vec = vec;
         let capa = vec.capacity();
         let array = self

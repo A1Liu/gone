@@ -5,7 +5,7 @@ languages.
 ## Features
 All of these are todo.
 
-- Generators from Python/Rust unstable
+- Generators from Python/JavaScript/Rust unstable
 - For loops from Java
 - Closures from Go
 - Logging/printing from Go

@@ -6,6 +6,7 @@ pub mod ast;
 pub mod buckets;
 pub mod filedb;
 pub mod parser;
+pub mod type_checking;
 #[macro_use]
 pub mod util;
 
@@ -14,12 +15,14 @@ pub mod test;
 
 use util::*;
 
+const KB: usize = 1024;
+
 pub fn compile(files: &filedb::FileDb) -> Result<(), Vec<Error>> {
     use codespan_reporting::files::Files;
     use parser::*;
     let ids = files.file_ids();
 
-    let allocator = buckets::BucketList::with_capacity(4096);
+    let allocator = buckets::BucketList::with_capacity(KB * KB * 4);
     let mut asts = Vec::with_capacity(ids.len());
     let mut errs = Vec::new();
     let symbols = Symbols::new(&*allocator);

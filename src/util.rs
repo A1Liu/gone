@@ -1,6 +1,8 @@
 use crate::filedb::*;
 use codespan_reporting::diagnostic::{Diagnostic, Label};
 use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
+use core::ptr::null_mut;
+use core::sync::atomic::{AtomicPtr, Ordering};
 use std::fmt::Write;
 use std::{fmt, str};
 
@@ -91,5 +93,46 @@ impl fmt::Write for StringWriter {
     fn write_str(&mut self, buf: &str) -> fmt::Result {
         self.buf.extend_from_slice(buf.as_bytes());
         return Ok(());
+    }
+}
+
+pub struct SharedRef<T> {
+    pub ptr: AtomicPtr<T>,
+}
+
+impl<T> SharedRef<T> {
+    pub fn new() -> Self {
+        Self {
+            ptr: AtomicPtr::new(null_mut()),
+        }
+    }
+
+    #[inline]
+    pub fn try_use(&self) -> Option<&'static T> {
+        return unsafe { self.ptr.load(Ordering::SeqCst).as_ref() };
+    }
+
+    #[inline]
+    pub fn leaky_store(&self, data: &'static T) -> &'static T {
+        while let Err(ptr) = self.ptr.compare_exchange_weak(
+            null_mut(),
+            data as *const T as *mut T,
+            Ordering::SeqCst,
+            Ordering::SeqCst,
+        ) {
+            if ptr != null_mut() {
+                return unsafe { &*ptr };
+            }
+        }
+
+        return data;
+    }
+}
+
+impl<T: 'static> core::ops::Deref for SharedRef<T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        return self.try_use().unwrap();
     }
 }

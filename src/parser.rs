@@ -14,8 +14,8 @@ pub struct Symbols {
     pub next: u32,
 }
 
-const UNDERSCORE_SYMBOL: u32 = 0;
-const IT_SYMBOL: u32 = 1;
+pub const UNDERSCORE_SYMBOL: u32 = 0;
+pub const IT_SYMBOL: u32 = 1;
 
 impl Symbols {
     pub fn new(alloc: &impl Allocator<'static>) -> RefCell<Symbols> {
@@ -82,7 +82,8 @@ fn bin_op_span(
     x: Spanned<Expr>,
     y: Spanned<Expr>,
 ) -> Spanned<Expr> {
-    return span(Expr::Bin(op, a.add(x), a.add(y)), x.begin, y.end);
+    let (begin, end) = (x.begin, y.end);
+    return span(Expr::Bin(op, a.add(x), a.add(y)), begin, end);
 }
 
 peg::parser! {
@@ -144,8 +145,9 @@ peg::parser! {
 
     rule paren_expr() -> Spanned<Expr> =
         b:position!() "(" _ es:(simple_expr() ** comma()) force:comma()? _ ")" e:position!() {
+            let mut es = es;
             match es.len() {
-                1 if !force.is_some() => es[0],
+                1 if !force.is_some() => es.swap_remove(0),
                 _ => span(Expr::Tuple(a.add_array(es)), b, e),
             }
         }
@@ -175,20 +177,33 @@ peg::parser! {
         --
         x:(@) _ ("*" !"*") _ y:@ { bin_op_span(a, BinOp::Mult, x, y) }
         --
-        b:position!() key("not") _ x:@ { span(Expr::Not(a.add(x)), b, x.end) }
-        b:position!() "&" _ x:@ { span(Expr::Ref(a.add(x)), b, x.end) }
-        b:position!() "^" _ x:@ { span(Expr::Deref(a.add(x)), b, x.end) }
-        b:position!() "**" _ x:@ { span(Expr::Splat(a.add(x)), b, x.end) }
-        b:position!() ".." _ y:@ {
-            bin_op_span(a, BinOp::Range, span(Expr::Int(0),b, y.end), y) }
-        b:position!() "..=" _ y:@ {
-            bin_op_span(a, BinOp::InclusiveRange, span(Expr::Int(0),b, y.end), y) }
+        b:position!() key("not") _ x:@ { let end = x.end; span(Expr::Not(a.add(x)), b, end) }
+        b:position!() "&" _ x:@ {
+            let end = x.end;
+            span(Expr::Ref(a.add(x)), b, end) }
+        b:position!() "^" _ x:@ {
+            let end = x.end;
+            span(Expr::Deref(a.add(x)), b, end) }
+        b:position!() "**" _ x:@ {
+            let end = x.end;
+            span(Expr::Splat(a.add(x)), b, end) }
+        b:position!() ".." _ x:@ {
+            let end = x.end;
+            bin_op_span(a, BinOp::Range, span(Expr::Int(0),b, end), x) }
+        b:position!() "..=" _ x:@ {
+            let end = x.end;
+            bin_op_span(a, BinOp::InclusiveRange, span(Expr::Int(0), b, end), x) }
         --
-        x:@ _ ("." !".") _ id:ident() { span(Expr::Field(a.add(x), id), x.begin, id.end) }
+        x:@ _ ("." !".") _ id:ident() {
+            let (begin, end) = (x.begin, id.end);
+            span(Expr::Field(a.add(x), id), begin, end) }
         x:@ quiet!{ nbspace()* } "(" _ params:(expr() ** comma()) _ ")" e:position!() {
-            span(Expr::Call(a.add(x), a.add_array(params)), x.begin, e)
+            let begin = x.begin;
+            span(Expr::Call(a.add(x), a.add_array(params)), begin, e)
         }
-        x:@ _ (".." !".") e:position!() { span(Expr::LowerBoundedRange(a.add(x)), x.begin, e) }
+        x:@ _ (".." !".") e:position!() {
+            let begin = x.begin;
+            span(Expr::LowerBoundedRange(a.add(x)), begin, e) }
         --
         p:paren_expr() { p }
         s:string() { span(Expr::Str(s.inner), s.begin, s.end) }
@@ -205,17 +220,17 @@ peg::parser! {
             let branch = BranchExpr { cond, if_true, if_false };
             span(Expr::Branch(a.add(branch)), b, e)
         } /
-        b:block() { span(Expr::Block(b.inner), b.begin, b.end) } /
+        b:block() { let b = b; span(Expr::Block(b.inner), b.begin, b.end) } /
         m:match_block() { span(Expr::Match(a.add(m.inner)), m.begin, m.end) } /
         e:simple_expr() { e }
 
-    rule block() -> Spanned<&'static [Spanned<Stmt>]> =
+    rule block() -> Spanned<&'static mut [Spanned<Stmt>]> =
         b:position!() "{" _ stmts:(stmt()*) _ expr:expr()? _ "}" e:position!() {
             let mut stmts = stmts;
             if let Some(expr) = expr {
                 stmts.push(span(Stmt::Expr(expr.inner), expr.begin, expr.end));
             }
-            span(&*a.add_array(stmts), b, e)
+            span(a.add_array(stmts), b, e)
         }
 
     rule match_arm() -> MatchArm = pat:pattern() _ "=>" _ expr:expr() _ comma()? {
@@ -230,7 +245,7 @@ peg::parser! {
         key("u64") { TypeName::U64 } /
         key("string") { TypeName::String } /
         key("bool") { TypeName::Bool } /
-        key("Void") { TypeName::Tuple(&[]) } /
+        key("Void") { TypeName::Tuple(&mut []) } /
         id:ident() { TypeName::Ident(id) } /
         "$" id:ident() { TypeName::PolymorphDecl(id) } /
         "[" _ ty:type_decl_ref() _ "]" { TypeName::Slice(a.add(ty)) } /
@@ -243,9 +258,9 @@ peg::parser! {
             for mut decl_list in decls { decl_out.append(&mut decl_list); }
             // decl_out.append(&mut last);
 
-            TypeName::Struct(&*a.add_array(decl_out))
+            TypeName::Struct(a.add_array(decl_out))
         } /
-        "(" _ tys:(type_decl_ref() ** comma()) _ ")" { TypeName::Tuple(&*a.add_array(tys)) }
+        "(" _ tys:(type_decl_ref() ** comma()) _ ")" { TypeName::Tuple(a.add_array(tys)) }
 
     rule type_decl_ref() -> Spanned<Type> =
         spanned(<ptr:("&"?) _ x:type_name() { Type { name: x, ptr: ptr.is_some() } }>)
@@ -253,14 +268,15 @@ peg::parser! {
     rule type_decl_enum() -> Vec<Spanned<Type>> = tys:(type_decl_ref() ++ (_ "|" _)) { tys }
 
     rule type_decl() -> Spanned<Type> = tys:type_decl_enum() {?
+        let mut tys = tys;
         if tys.len() == 1 {
-            Ok(tys[0])
+            Ok(tys.swap_remove(0))
         } else {
             let (begin, end) = (tys[0].begin, tys[tys.len() - 1].end);
             assert!(begin < end);
             fn has_complex_type(tys: &[Spanned<Type>]) -> bool {
                 for ty in tys {
-                    match ty.inner.name {
+                    match &ty.inner.name {
                         TypeName::Struct(_)
                         | TypeName::Tuple(_) => return true,
                         TypeName::Slice(ty) => return has_complex_type(slice::from_ref(ty)),
@@ -288,8 +304,8 @@ peg::parser! {
         expr:expr() { PatternName::Expr(expr) } /
         "_" { PatternName::IgnoreValue } /
         "[" _ pats:(pattern() ** comma()) _ "]" { PatternName::Slice(a.add_array(pats)) } /
-        "{" _ pats:strict(<pattern_decl()>)*  _ "}" { PatternName::Struct(&*a.add_array(pats)) } /
-        "(" _ pats:(pattern() ** comma()) _ ")" { PatternName::Tuple(&*a.add_array(pats)) }
+        "{" _ pats:strict(<pattern_decl()>)*  _ "}" { PatternName::Struct(a.add_array(pats)) } /
+        "(" _ pats:(pattern() ** comma()) _ ")" { PatternName::Tuple(a.add_array(pats)) }
 
     rule pattern_ref() -> Spanned<Pattern> =
         b:position!() ptr:("&"?) _ name:pattern_name() e:position!() {
@@ -306,8 +322,9 @@ peg::parser! {
         x:pattern_ref() { vec![x] }
 
     rule pattern() -> Spanned<Pattern> = pats:pattern_enum() {
+        let mut pats = pats;
         if pats.len() == 1 {
-            pats[0]
+            pats.swap_remove(0)
         } else {
             let (begin, end) = (pats[pats.len() - 1].begin, pats[0].end);
             assert!(begin < end);
@@ -345,10 +362,10 @@ peg::parser! {
                 } else {
                     let mut decls = Vec::with_capacity(ids.len());
                     let iter = ids.into_iter().zip(exprs.into_iter());
-                    let ty = Type { name: TypeName::InferType, ptr: false };
-                    let create_ty = |id: Spanned<u32>| span(ty, id.begin, id.end);
                     for (id, expr) in iter {
-                        decls.push(Decl { id, ty: create_ty(id), expr });
+                        let ty = Type { name: TypeName::InferType, ptr: false };
+                        let (begin, end) = (id.begin, id.end);
+                        decls.push(Decl { id, ty: span(ty, begin, end), expr });
                     }
 
                     Ok(decls)
@@ -360,9 +377,9 @@ peg::parser! {
                 } else {
                     let mut decls = Vec::with_capacity(ids.len());
                     let iter = ids.into_iter().zip(tys.into_iter());
-                    let create_expr = |id: Spanned<u32>| span(Expr::Default, id.begin, id.end);
                     for (id, ty) in iter {
-                        decls.push(Decl { id, ty, expr: create_expr(id) });
+                        let (begin, end) = (id.begin, id.end);
+                        decls.push(Decl { id, ty, expr: span(Expr::Default, begin, end) });
                     }
 
                     Ok(decls)
@@ -375,15 +392,15 @@ peg::parser! {
     rule type_params() -> Vec<Spanned<u32>> =
         "<" _ generics:(ident() ++ comma()) _ ">" { generics }
 
-
     rule stmt() -> Spanned<Stmt> =
         spanned(<semi() { Stmt::Nop }>) /
         spanned(<strict(<d:decl() { Stmt::Decl(a.add_array(d)) }>)>) /
         b:position!() key("type") _ id:ident() _ params:type_params()? _ ty:type_decl() {
-            let params = params.map(|p| &*a.add_array(p)).unwrap_or(&[]);
+            let params = params.map(|p| a.add_array(p)).unwrap_or(&mut []);
             span(Stmt::Type(ty.inner, params), b, ty.end) } /
         b:position!() key("let") _ pat:pattern() _ "=" _ expr:expr() {
-            span(Stmt::Destructure(a.add(Destructure { pat, expr })), b, expr.end) } /
+            let end = expr.end;
+            span(Stmt::Destructure(a.add(Destructure { pat, expr })), b, end) } /
         e:expr() semantic_split() _ { span(Stmt::Expr(e.inner), e.begin, e.end) }
 
     pub rule stmt_list() -> Vec<Spanned<Stmt>> = _ stmts:(stmt() ** _) _ { stmts }
