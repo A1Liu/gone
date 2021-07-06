@@ -1,8 +1,10 @@
 use crate::filedb::*;
 use codespan_reporting::diagnostic::{Diagnostic, Label};
 use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
+use core::marker::PhantomData;
 use core::ptr::null_mut;
-use core::sync::atomic::{AtomicPtr, Ordering};
+use core::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
+use lazy_static::lazy_static;
 use std::fmt::Write;
 use std::{fmt, str};
 
@@ -135,4 +137,28 @@ impl<T: 'static> core::ops::Deref for SharedRef<T> {
     fn deref(&self) -> &T {
         return self.try_use().unwrap();
     }
+}
+
+#[derive(Clone, Copy)]
+#[repr(C)]
+pub struct Spanned<T> {
+    // TODO these could be u32's probably
+    // TODO should this be a generic wrapper or just put as fields?
+    pub inner: T,
+    pub begin: usize,
+    pub end: usize,
+}
+
+impl<T: fmt::Debug> fmt::Debug for Spanned<T> {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        return self.inner.fmt(fmt);
+    }
+}
+
+pub fn span<T>(inner: T, begin: usize, end: usize) -> Spanned<T> {
+    return Spanned {
+        inner,
+        begin: begin,
+        end: end,
+    };
 }

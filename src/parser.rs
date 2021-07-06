@@ -1,5 +1,6 @@
 use crate::ast::*;
 use crate::buckets::*;
+use crate::util::*;
 use core::cell::RefCell;
 use core::slice;
 use lazy_static::lazy_static;
@@ -66,6 +67,7 @@ lazy_static! {
         map.insert("if", ());
         map.insert("else", ());
         map.insert("match", ());
+        map.insert("import", ());
 
         map.insert("not", ());
         map.insert("or", ());
@@ -90,9 +92,9 @@ peg::parser! {
   pub grammar lang_grammar(a: &BucketList<'static>, sym: &RefCell<Symbols>) for str {
     use peg::ParseLiteral;
 
-    rule nbspace() = [' ' | '\t']
-    rule newline() = "\n" / "\r\n"
-    rule whitespace() = (nbspace() / newline())
+    rule nbspace() = [' ' | '\t']+
+    rule newline() = ("\n" / "\r\n")+
+    rule whitespace() = (nbspace() / newline())+
     rule line_comment() = "//" [^ '\r' | '\n']* newline()
     rule block_comment_internal() = // TODO do these actually work?
         [^ '*' | '/' ]* "**" block_comment_internal() /
@@ -105,7 +107,11 @@ peg::parser! {
     rule _() = quiet!{ (whitespace() / line_comment() / block_comment())* }
     rule semantic_split() =
         quiet!{ (nbspace() / block_comment())* }
-        (quiet!{ line_comment() } / newline() / semi() / _ &"}") _
+        (quiet!{ line_comment() } / newline() / semi() / &"}") _
+
+    rule expr_split() =
+        quiet!{ (nbspace() / block_comment())* }
+        (quiet!{ line_comment() } / newline() / semi() / (&"}" / &")" / &"," / &"]")) _
 
     rule semi() = ";" _
     rule comma() -> () = _ "," _
@@ -113,6 +119,9 @@ peg::parser! {
     rule spanned<T>(r: rule<T>) -> Spanned<T> = b:position!() res:r() e:position!() {
         span(res, b, e)
     }
+
+    rule prefixed<T, Ignore>(i: rule<Ignore>, r: rule<T>) -> T = i() res:r() { res }
+    rule suffixed<T, Ignore>(r: rule<T>, i: rule<Ignore>) -> T = res:r() i() { res }
 
     rule run<T>(r: rule<T>) -> () = r() { () }
 
@@ -124,7 +133,7 @@ peg::parser! {
     rule simple_string() -> String = "\"" s:$( ("\\\"" / [^ '"'])* ) "\"" {?
         unescape::unescape(s).ok_or("failed to parse string literal") }
     rule ident_trailing() = ['a'..='z' | 'A'..='Z' | '_' | '0'..='9']
-    rule ident() -> Spanned<u32> =
+    rule ident_inner() -> Spanned<u32> =
         b:position!()
         id:$(['a'..='z' | 'A'..='Z' | '_'] ident_trailing()*) e:position!() {?
         if KEYWORDS.contains_key(id) {
@@ -133,6 +142,10 @@ peg::parser! {
             Ok(span(sym.borrow_mut().add_symbol(a, id), b, e))
         }
     }
+    rule ident() -> Spanned<u32> = quiet!{ ident_inner() } /
+        expected!("identifier")
+
+
 
     rule string() -> Spanned<&'static str> =
         begin:position!() s:(simple_string() ++ _) end:position!() {
@@ -153,8 +166,8 @@ peg::parser! {
         }
 
     rule simple_expr() -> Spanned<Expr> = precedence! {
-        x:(@) _ ".." _ y:@ { bin_op_span(a, BinOp::Range, x, y) }
-        x:(@) _ "..=" _ y:@ { bin_op_span(a, BinOp::InclusiveRange, x, y) }
+        x:(@) nbspace()? ".." nbspace()? y:@ { bin_op_span(a, BinOp::Range, x, y) }
+        x:(@) nbspace()? "..=" nbspace()? y:@ { bin_op_span(a, BinOp::InclusiveRange, x, y) }
         --
         x:(@) _ key("or") _ y:@ { bin_op_span(a, BinOp::Or, x, y) }
         --
@@ -175,35 +188,32 @@ peg::parser! {
         --
         x:(@) _ "+" _ y:@ { bin_op_span(a, BinOp::Add, x, y) }
         --
-        x:(@) _ ("*" !"*") _ y:@ { bin_op_span(a, BinOp::Mult, x, y) }
+        x:(@) _ "*" _ y:@ { bin_op_span(a, BinOp::Mult, x, y) }
         --
         b:position!() key("not") _ x:@ { let end = x.end; span(Expr::Not(a.add(x)), b, end) }
-        b:position!() "&" _ x:@ {
+        b:position!() "&" nbspace()? x:@ {
             let end = x.end;
             span(Expr::Ref(a.add(x)), b, end) }
-        b:position!() "^" _ x:@ {
+        b:position!() "^" nbspace()? x:@ {
             let end = x.end;
             span(Expr::Deref(a.add(x)), b, end) }
-        b:position!() "**" _ x:@ {
+        b:position!() ".." nbspace()? x:@ {
             let end = x.end;
-            span(Expr::Splat(a.add(x)), b, end) }
-        b:position!() ".." _ x:@ {
-            let end = x.end;
-            bin_op_span(a, BinOp::Range, span(Expr::Int(0),b, end), x) }
+            bin_op_span(a, BinOp::Range, span(Expr::NoneValue, b, end), x) }
         b:position!() "..=" _ x:@ {
             let end = x.end;
-            bin_op_span(a, BinOp::InclusiveRange, span(Expr::Int(0), b, end), x) }
+            bin_op_span(a, BinOp::InclusiveRange, span(Expr::NoneValue, b, end), x) }
         --
         x:@ _ ("." !".") _ id:ident() {
             let (begin, end) = (x.begin, id.end);
             span(Expr::Field(a.add(x), id), begin, end) }
-        x:@ quiet!{ nbspace()* } "(" _ params:(expr() ** comma()) _ ")" e:position!() {
+        x:@ quiet!{ nbspace()? } "(" _ params:(expr() ** comma()) _ ")" e:position!() {
             let begin = x.begin;
             span(Expr::Call(a.add(x), a.add_array(params)), begin, e)
         }
-        x:@ _ (".." !".") e:position!() {
+        x:@ nbspace()? ".." &expr_split() e:position!() {
             let begin = x.begin;
-            span(Expr::LowerBoundedRange(a.add(x)), begin, e) }
+            bin_op_span(a, BinOp::Range, x, span(Expr::NoneValue, begin, e)) }
         --
         p:paren_expr() { p }
         s:string() { span(Expr::Str(s.inner), s.begin, s.end) }
@@ -211,7 +221,7 @@ peg::parser! {
         id:ident() { span(Expr::Ident(id.inner), id.begin, id.end) }
         s:spanned(<key("true") { Expr::True } / key("false") { Expr::False }>) { s }
         s:spanned(<key("None") { Expr::NoneValue }>) { s }
-        s:spanned(<(".." !".") { Expr::FullRange }>) { s }
+        s:spanned(<".." &expr_split() { Expr::FullRange }>) { s }
     }
 
     rule expr() -> Spanned<Expr> =
@@ -273,7 +283,6 @@ peg::parser! {
             Ok(tys.swap_remove(0))
         } else {
             let (begin, end) = (tys[0].begin, tys[tys.len() - 1].end);
-            assert!(begin < end);
             fn has_complex_type(tys: &[Spanned<Type>]) -> bool {
                 for ty in tys {
                     match &ty.inner.name {
@@ -298,10 +307,17 @@ peg::parser! {
     }
 
     rule pattern_decl() -> PatternStructDecl =
-        id:ident() _ ":" _ pat:pattern() { PatternStructDecl { id, pat } }
+        id:ident() pat:prefixed(<_ ":" _>, <pattern()>)? {
+            if let Some(pat) = pat {
+                PatternStructDecl::Pattern { id, pat }
+            } else {
+                PatternStructDecl::Name(id)
+            }
+    }
 
+    // TODO should we allow complex expressions here?
     rule pattern_name() -> PatternName =
-        expr:expr() { PatternName::Expr(expr) } /
+        expr:simple_expr() { PatternName::Expr(expr) } /
         "_" { PatternName::IgnoreValue } /
         "[" _ pats:(pattern() ** comma()) _ "]" { PatternName::Slice(a.add_array(pats)) } /
         "{" _ pats:strict(<pattern_decl()>)*  _ "}" { PatternName::Struct(a.add_array(pats)) } /
@@ -313,21 +329,14 @@ peg::parser! {
             span(pat, b, e)
         }
 
-    rule pattern_enum() -> Vec<Spanned<Pattern>> =
-        x:pattern_ref() _ "|" _  rest:pattern_enum() {
-            let mut rest = rest; // NOTE This should put things in reverse order
-            rest.push(x);
-            rest
-        } /
-        x:pattern_ref() { vec![x] }
+    rule pattern_enum() -> Vec<Spanned<Pattern>> = pats:(pattern_ref() ++ (_ "|" _)) { pats }
 
     rule pattern() -> Spanned<Pattern> = pats:pattern_enum() {
         let mut pats = pats;
         if pats.len() == 1 {
             pats.swap_remove(0)
         } else {
-            let (begin, end) = (pats[pats.len() - 1].begin, pats[0].end);
-            assert!(begin < end);
+            let (begin, end) = (pats[0].begin, pats[pats.len() - 1].end);
             let name = PatternName::Enum(a.add_array(pats));
             span(Pattern { name, ptr: false }, begin, end)
         }
@@ -345,13 +354,8 @@ peg::parser! {
         match (tys, exprs) {
             (Some(tys), Some(exprs)) => {
                 if ids.len() == tys.len() && tys.len() == exprs.len() {
-                    let mut decls = Vec::with_capacity(ids.len());
                     let iter = ids.into_iter().zip(tys.into_iter()).zip(exprs.into_iter());
-                    for ((id, ty), expr) in iter {
-                        decls.push(Decl { id, ty, expr });
-                    }
-
-                    Ok(decls)
+                    Ok(iter.map(|((id, ty), expr)| Decl { id, ty, expr }).collect())
                 } else {
                     Err("declaration length mismatch")
                 }
@@ -360,13 +364,12 @@ peg::parser! {
                 if ids.len() != exprs.len() {
                     Err("declaration length mismatch")
                 } else {
-                    let mut decls = Vec::with_capacity(ids.len());
                     let iter = ids.into_iter().zip(exprs.into_iter());
-                    for (id, expr) in iter {
+                    let decls = iter.map(|(id, expr)| {
                         let ty = Type { name: TypeName::InferType, ptr: false };
-                        let (begin, end) = (id.begin, id.end);
-                        decls.push(Decl { id, ty: span(ty, begin, end), expr });
-                    }
+                        let ty = span(ty, id.begin, id.end);
+                        return Decl { id, ty, expr };
+                    }).collect();
 
                     Ok(decls)
                 }
@@ -375,12 +378,11 @@ peg::parser! {
                 if ids.len() != tys.len() {
                     Err("declaration length mismatch")
                 } else {
-                    let mut decls = Vec::with_capacity(ids.len());
                     let iter = ids.into_iter().zip(tys.into_iter());
-                    for (id, ty) in iter {
-                        let (begin, end) = (id.begin, id.end);
-                        decls.push(Decl { id, ty, expr: span(Expr::Default, begin, end) });
-                    }
+                    let decls = iter.map(|(id, ty)| {
+                        let expr = span(Expr::Default, id.begin, id.end);
+                        return Decl { id, ty, expr };
+                    }).collect();
 
                     Ok(decls)
                 }
@@ -394,6 +396,8 @@ peg::parser! {
 
     rule stmt() -> Spanned<Stmt> =
         spanned(<semi() { Stmt::Nop }>) /
+        spanned(<key("import") _ path:(ident() ++ (_ "." _)) all:(_ "." _ "*")? {
+            Stmt::Import { path: a.add_array(path), all: all.is_some() } }>) /
         spanned(<strict(<d:decl() { Stmt::Decl(a.add_array(d)) }>)>) /
         b:position!() key("type") _ id:ident() _ params:type_params()? _ ty:type_decl() {
             let params = params.map(|p| a.add_array(p)).unwrap_or(&mut []);

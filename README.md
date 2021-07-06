@@ -7,7 +7,7 @@ All of these are todo.
 
 - Generators from Python/JavaScript/Rust unstable
 - For loops from Java
-- Closures from Go
+- Closures from Go, with Jai semantics
 - Logging/printing from Go
 - Structs from Go
 - Enums from Rust
@@ -24,6 +24,9 @@ All of these are todo.
 - Light operator overloading from Jai
 - Polymorphic function deduplication?
 - Keyword arguments and default arguments from Jai
+- `using` keyword from Jai
+- import semantics from Java
+- Go-style slices (length stored as 8 byte aligned u64 directly after backing array in memory)
 
 ## Goals
 The goal of this language is to make it easier to ship medium quality software. Thus,
@@ -48,4 +51,3 @@ the philosophy of the compiler should be to optimize first and foremost for:
   in most cases succeed.
 - **Binary compatibility** - Programs will be compiled from source each time.
 - **Incremental compilation** - Programs will be compiled from source each time.
-

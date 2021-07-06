@@ -1,28 +1,4 @@
-use std::fmt;
-
-#[derive(Clone, Copy)]
-#[repr(C)]
-pub struct Spanned<T> {
-    // TODO these could be u32's probably
-    // TODO should this be a generic wrapper or just put as fields?
-    pub inner: T,
-    pub begin: usize,
-    pub end: usize,
-}
-
-impl<T: fmt::Debug> fmt::Debug for Spanned<T> {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        return self.inner.fmt(fmt);
-    }
-}
-
-pub fn span<T>(inner: T, begin: usize, end: usize) -> Spanned<T> {
-    return Spanned {
-        inner,
-        begin: begin,
-        end: end,
-    };
-}
+use crate::util::*;
 
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
@@ -44,6 +20,7 @@ pub enum BinOp {
     // a[0..=12] or a[..=12] (accesses values 0 and 12 and all in between)
     InclusiveRange,
     // a[0..12] or a[..12] (accesses values 0 and 11 and all in between)
+    // or a[1..] (accesses values 1 until the end)
     Range,
 }
 
@@ -59,8 +36,6 @@ pub enum Expr {
     False,
     NoneValue,
 
-    // a[4..] (accesses element 4 and all elements after that)
-    LowerBoundedRange(&'static Spanned<Expr>),
     // a[..] (accesses all elements)
     FullRange,
 
@@ -70,7 +45,6 @@ pub enum Expr {
     Ref(&'static Spanned<Expr>),
     Deref(&'static Spanned<Expr>),
     Field(&'static Spanned<Expr>, Spanned<u32>),
-    Splat(&'static Spanned<Expr>),
 
     Block(&'static [Spanned<Stmt>]),
     Match(&'static MatchBlock),
@@ -108,6 +82,10 @@ pub enum Stmt {
     Decl(&'static [Decl]),
     Type(Type, &'static [Spanned<u32>]),
     Destructure(&'static Destructure),
+    Import {
+        path: &'static [Spanned<u32>],
+        all: bool,
+    },
     Nop,
 }
 
@@ -134,10 +112,13 @@ pub struct Type {
 }
 
 #[derive(Debug, Clone, Copy)]
-#[repr(C)]
-pub struct PatternStructDecl {
-    pub id: Spanned<u32>,
-    pub pat: Spanned<Pattern>,
+#[repr(C, u8)]
+pub enum PatternStructDecl {
+    Name(Spanned<u32>),
+    Pattern {
+        id: Spanned<u32>,
+        pat: Spanned<Pattern>,
+    },
 }
 
 #[derive(Debug, Clone, Copy)]

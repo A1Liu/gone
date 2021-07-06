@@ -3,7 +3,7 @@ use crate::buckets::*;
 use std::collections::HashMap;
 
 pub struct TypeTable {
-    // pub types: HashMap<u32,  >, // type-id to definition
+    pub types: HashMap<u32, u32>, // type-id to definition
     pub next_id: u32,
 }
 

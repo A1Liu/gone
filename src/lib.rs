@@ -44,7 +44,7 @@ pub fn compile(files: &filedb::FileDb) -> Result<(), Vec<Error>> {
         for (file, err) in errs {
             let err = Error {
                 info: "parse error",
-                message: Some(err.expected.to_string()),
+                message: Some(format!("expected {}", err.expected.to_string())),
                 begin: err.location.offset,
                 end: err.location.offset,
                 file,
