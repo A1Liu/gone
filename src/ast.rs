@@ -1,6 +1,6 @@
 use crate::util::*;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 #[repr(u8)]
 pub enum BinOp {
     Add,
@@ -24,14 +24,14 @@ pub enum BinOp {
     Range,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 #[repr(C, u8)]
 pub enum Expr {
+    Default,
     Int(u64),
     Str(&'static str),
-    Ident(u32),
-    Default,
-    Tuple(&'static [Spanned<Expr>]),
+    Ident(Id),
+    Tuple(&'static mut [Spanned<Expr>]),
     True,
     False,
     NoneValue,
@@ -39,20 +39,27 @@ pub enum Expr {
     // a[..] (accesses all elements)
     FullRange,
 
-    Bin(BinOp, &'static Spanned<Expr>, &'static Spanned<Expr>),
+    Bin(
+        BinOp,
+        &'static mut Spanned<Expr>,
+        &'static mut Spanned<Expr>,
+    ),
 
-    Not(&'static Spanned<Expr>),
-    Ref(&'static Spanned<Expr>),
-    Deref(&'static Spanned<Expr>),
-    Field(&'static Spanned<Expr>, Spanned<u32>),
+    Not(&'static mut Spanned<Expr>),
+    Ref(&'static mut Spanned<Expr>),
+    Deref(&'static mut Spanned<Expr>),
+    Field {
+        base: &'static mut Spanned<Expr>,
+        field: Spanned<Id>,
+    },
 
-    Block(&'static [Spanned<Stmt>]),
-    Match(&'static MatchBlock),
-    Branch(&'static BranchExpr),
-    Call(&'static Spanned<Expr>, &'static [Spanned<Expr>]),
+    Block(&'static mut [Spanned<Stmt>]),
+    Match(&'static mut MatchBlock),
+    Branch(&'static mut BranchExpr),
+    Call(&'static mut Spanned<Expr>, &'static mut [Spanned<Expr>]),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 #[repr(C)]
 pub struct BranchExpr {
     pub cond: Spanned<Expr>,
@@ -60,95 +67,99 @@ pub struct BranchExpr {
     pub if_false: Spanned<Expr>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 #[repr(C)]
 pub struct Decl {
-    pub id: Spanned<u32>,
+    pub id: Spanned<Id>,
     pub ty: Spanned<Type>,
     pub expr: Spanned<Expr>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 #[repr(C)]
 pub struct Destructure {
     pub pat: Spanned<Pattern>,
     pub expr: Spanned<Expr>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 #[repr(C, u8)]
 pub enum Stmt {
     Expr(Expr),
-    Decl(&'static [Decl]),
-    Type(Type, &'static [Spanned<u32>]),
-    Destructure(&'static Destructure),
+    Decl(&'static mut [Decl]),
+    Type {
+        id: Spanned<Id>,
+        def: Type,
+        params: &'static mut [Spanned<Id>],
+    },
+    Destructure(&'static mut Destructure),
     Import {
-        path: &'static [Spanned<u32>],
+        path: &'static mut [Spanned<Id>],
         all: bool,
     },
     Nop,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 #[repr(C, u8)]
 pub enum TypeName {
-    Struct(&'static [Decl]),
-    Tuple(&'static [Spanned<Type>]),
-    Enum(&'static [Spanned<Type>]),
-    Slice(&'static Spanned<Type>),
-    PolymorphDecl(Spanned<u32>),
-    Ident(Spanned<u32>),
+    Struct(&'static mut [Decl]),
+    Tuple(&'static mut [Spanned<Type>]),
+    Enum(&'static mut [Spanned<Type>]),
+    Slice(&'static mut Spanned<Type>),
+    PolymorphDecl(Spanned<Id>),
+    Ident(Spanned<Id>),
     U64,
     String,
     Bool,
     InferType,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 #[repr(C)]
 pub struct Type {
     pub name: TypeName,
     pub ptr: bool,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 #[repr(C, u8)]
 pub enum PatternStructDecl {
-    Name(Spanned<u32>),
+    Name(Spanned<Id>),
     Pattern {
-        id: Spanned<u32>,
+        id: Spanned<Id>,
         pat: Spanned<Pattern>,
     },
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 #[repr(C, u8)]
 pub enum PatternName {
-    Struct(&'static [PatternStructDecl]),
-    Tuple(&'static [Spanned<Pattern>]),
-    Enum(&'static [Spanned<Pattern>]),
-    Slice(&'static [Spanned<Pattern>]),
+    Struct(&'static mut [PatternStructDecl]),
+    Tuple(&'static mut [Spanned<Pattern>]),
+    Enum(&'static mut [Spanned<Pattern>]),
+    Slice(&'static mut [Spanned<Pattern>]),
     Expr(Spanned<Expr>),
     IgnoreValue,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 #[repr(C)]
 pub struct Pattern {
     pub name: PatternName,
     pub ptr: bool,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 #[repr(C)]
 pub struct MatchArm {
     pub pat: Spanned<Pattern>,
     pub expr: Spanned<Expr>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 #[repr(C)]
 pub struct MatchBlock {
     pub expr: Spanned<Expr>,
-    pub arms: &'static [MatchArm],
+    pub arms: &'static mut [MatchArm],
 }

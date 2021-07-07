@@ -3,7 +3,7 @@ use codespan_reporting::diagnostic::{Diagnostic, Label};
 use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
 use core::marker::PhantomData;
 use core::ptr::null_mut;
-use core::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicPtr, AtomicU64, Ordering};
 use lazy_static::lazy_static;
 use std::fmt::Write;
 use std::{fmt, str};
@@ -144,6 +144,7 @@ impl<T: 'static> core::ops::Deref for SharedRef<T> {
 pub struct Spanned<T> {
     // TODO these could be u32's probably
     // TODO should this be a generic wrapper or just put as fields?
+    // TODO maybe this should like, hold hashes or something for caching
     pub inner: T,
     pub begin: usize,
     pub end: usize,
@@ -161,4 +162,57 @@ pub fn span<T>(inner: T, begin: usize, end: usize) -> Spanned<T> {
         begin: begin,
         end: end,
     };
+}
+
+#[repr(transparent)]
+pub struct Id(u64);
+
+impl fmt::Debug for Id {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        return self.value().fmt(fmt);
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IdValue {
+    Name(u64),
+    Type(u64),
+    Var(u64),
+}
+
+impl Id {
+    // top 4 bits used for type
+    const NAME: u64 = 0b0000_0000u64.reverse_bits();
+    const TYPE: u64 = 0b0000_0001u64.reverse_bits();
+    const VAR: u64 = 0b0000_0010u64.reverse_bits();
+    const RESERVED: u64 = 0b0000_1111u64.reverse_bits();
+
+    pub fn new(id: IdValue) -> Self {
+        return Self(Self::translate(id));
+    }
+
+    pub fn value(&self) -> IdValue {
+        let value = self.0 & !Self::RESERVED;
+        return match self.0 & Self::RESERVED {
+            Self::NAME => IdValue::Name(value),
+            Self::TYPE => IdValue::Type(value),
+            Self::VAR => IdValue::Var(value),
+            x => panic!(
+                "tag had value: 0b{:b} (reversed=0b{:b})",
+                x,
+                x.reverse_bits()
+            ),
+        };
+    }
+
+    fn translate(id: IdValue) -> u64 {
+        let (label, value) = match id {
+            IdValue::Name(v) => (Self::NAME, v),
+            IdValue::Type(v) => (Self::TYPE, v),
+            IdValue::Var(v) => (Self::VAR, v),
+        };
+
+        assert!((value & Self::RESERVED) == 0, "id was: {:?}", value);
+        return label | value;
+    }
 }

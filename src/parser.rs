@@ -11,12 +11,12 @@ use std::collections::HashMap;
 
 // TODO eventually this might wanna be a concurrent hashmap, IDK what i wanna do there tbh
 pub struct Symbols {
-    pub table: HashMap<&'static str, u32>,
-    pub next: u32,
+    pub table: HashMap<&'static str, u64>,
+    pub next: u64,
 }
 
-pub const UNDERSCORE_SYMBOL: u32 = 0;
-pub const IT_SYMBOL: u32 = 1;
+pub const UNDERSCORE_SYMBOL: u64 = 0;
+pub const IT_SYMBOL: u64 = 1;
 
 impl Symbols {
     pub fn new(alloc: &impl Allocator<'static>) -> RefCell<Symbols> {
@@ -31,7 +31,7 @@ impl Symbols {
         return RefCell::new(sym);
     }
 
-    pub fn add_symbol(&mut self, alloc: &impl Allocator<'static>, id: &str) -> u32 {
+    pub fn add_symbol(&mut self, alloc: &impl Allocator<'static>, id: &str) -> u64 {
         let id = if let Some(&id) = self.table.get(id) {
             id
         } else {
@@ -133,16 +133,17 @@ peg::parser! {
     rule simple_string() -> String = "\"" s:$( ("\\\"" / [^ '"'])* ) "\"" {?
         unescape::unescape(s).ok_or("failed to parse string literal") }
     rule ident_trailing() = ['a'..='z' | 'A'..='Z' | '_' | '0'..='9']
-    rule ident_inner() -> Spanned<u32> =
+    rule ident_inner() -> Spanned<Id> =
         b:position!()
         id:$(['a'..='z' | 'A'..='Z' | '_'] ident_trailing()*) e:position!() {?
         if KEYWORDS.contains_key(id) {
             Err("ident was keyword")
         } else {
-            Ok(span(sym.borrow_mut().add_symbol(a, id), b, e))
+            let id = sym.borrow_mut().add_symbol(a, id);
+            Ok(span(Id::new(IdValue::Name(id)), b, e))
         }
     }
-    rule ident() -> Spanned<u32> = quiet!{ ident_inner() } /
+    rule ident() -> Spanned<Id> = quiet!{ ident_inner() } /
         expected!("identifier")
 
 
@@ -204,9 +205,9 @@ peg::parser! {
             let end = x.end;
             bin_op_span(a, BinOp::InclusiveRange, span(Expr::NoneValue, b, end), x) }
         --
-        x:@ _ ("." !".") _ id:ident() {
-            let (begin, end) = (x.begin, id.end);
-            span(Expr::Field(a.add(x), id), begin, end) }
+        x:@ _ ("." !".") _ field:ident() {
+            let (begin, end) = (x.begin, field.end);
+            span(Expr::Field{ base: a.add(x), field }, begin, end) }
         x:@ quiet!{ nbspace()? } "(" _ params:(expr() ** comma()) _ ")" e:position!() {
             let begin = x.begin;
             span(Expr::Call(a.add(x), a.add_array(params)), begin, e)
@@ -391,7 +392,7 @@ peg::parser! {
         }
     }
 
-    rule type_params() -> Vec<Spanned<u32>> =
+    rule type_params() -> Vec<Spanned<Id>> =
         "<" _ generics:(ident() ++ comma()) _ ">" { generics }
 
     rule stmt() -> Spanned<Stmt> =
@@ -399,9 +400,10 @@ peg::parser! {
         spanned(<key("import") _ path:(ident() ++ (_ "." _)) all:(_ "." _ "*")? {
             Stmt::Import { path: a.add_array(path), all: all.is_some() } }>) /
         spanned(<strict(<d:decl() { Stmt::Decl(a.add_array(d)) }>)>) /
-        b:position!() key("type") _ id:ident() _ params:type_params()? _ ty:type_decl() {
+        b:position!() key("type") _ id:ident() _ params:type_params()? _ def:type_decl() {
             let params = params.map(|p| a.add_array(p)).unwrap_or(&mut []);
-            span(Stmt::Type(ty.inner, params), b, ty.end) } /
+            let ty = Stmt::Type{ id, def: def.inner, params };
+            span(ty, b, def.end) } /
         b:position!() key("let") _ pat:pattern() _ "=" _ expr:expr() {
             let end = expr.end;
             span(Stmt::Destructure(a.add(Destructure { pat, expr })), b, end) } /
