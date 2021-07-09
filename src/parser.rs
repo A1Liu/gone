@@ -11,12 +11,12 @@ use std::collections::HashMap;
 
 // TODO eventually this might wanna be a concurrent hashmap, IDK what i wanna do there tbh
 pub struct Symbols {
-    pub table: HashMap<&'static str, u64>,
-    pub next: u64,
+    pub table: HashMap<&'static str, u32>,
+    pub next: u32,
 }
 
-pub const UNDERSCORE_SYMBOL: u64 = 0;
-pub const IT_SYMBOL: u64 = 1;
+pub const UNDERSCORE_SYMBOL: u32 = 0;
+pub const IT_SYMBOL: u32 = 1;
 
 impl Symbols {
     pub fn new(alloc: &impl Allocator<'static>) -> RefCell<Symbols> {
@@ -31,7 +31,7 @@ impl Symbols {
         return RefCell::new(sym);
     }
 
-    pub fn add_symbol(&mut self, alloc: &impl Allocator<'static>, id: &str) -> u64 {
+    pub fn add_symbol(&mut self, alloc: &impl Allocator<'static>, id: &str) -> u32 {
         let id = if let Some(&id) = self.table.get(id) {
             id
         } else {
@@ -114,7 +114,7 @@ peg::parser! {
         (quiet!{ line_comment() } / newline() / semi() / (&"}" / &")" / &"," / &"]")) _
 
     rule semi() = ";" _
-    rule comma() -> () = _ "," _
+    rule comma() -> () = nbspace()? "," _
 
     rule spanned<T>(r: rule<T>) -> Spanned<T> = b:position!() res:r() e:position!() {
         span(res, b, e)
@@ -133,17 +133,17 @@ peg::parser! {
     rule simple_string() -> String = "\"" s:$( ("\\\"" / [^ '"'])* ) "\"" {?
         unescape::unescape(s).ok_or("failed to parse string literal") }
     rule ident_trailing() = ['a'..='z' | 'A'..='Z' | '_' | '0'..='9']
-    rule ident_inner() -> Spanned<Id> =
+    rule ident_inner() -> Spanned<u32> =
         b:position!()
         id:$(['a'..='z' | 'A'..='Z' | '_'] ident_trailing()*) e:position!() {?
         if KEYWORDS.contains_key(id) {
             Err("ident was keyword")
         } else {
             let id = sym.borrow_mut().add_symbol(a, id);
-            Ok(span(Id::new(IdValue::Name(id)), b, e))
+            Ok(span(id, b, e))
         }
     }
-    rule ident() -> Spanned<Id> = quiet!{ ident_inner() } /
+    rule ident() -> Spanned<u32> = quiet!{ ident_inner() } /
         expected!("identifier")
 
 
@@ -225,14 +225,17 @@ peg::parser! {
         s:spanned(<".." &expr_split() { Expr::FullRange }>) { s }
     }
 
-    rule expr() -> Spanned<Expr> =
+    rule complex_expr() -> Spanned<Expr> =
         b:position!() key("if") _ cond:expr() _ if_true:expr() _ key("else") _
         if_false:expr() e:position!() {
             let branch = BranchExpr { cond, if_true, if_false };
             span(Expr::Branch(a.add(branch)), b, e)
         } /
         b:block() { let b = b; span(Expr::Block(b.inner), b.begin, b.end) } /
-        m:match_block() { span(Expr::Match(a.add(m.inner)), m.begin, m.end) } /
+        m:match_block() { span(Expr::Match(a.add(m.inner)), m.begin, m.end) }
+
+    rule expr() -> Spanned<Expr> =
+        e:complex_expr() { e } /
         e:simple_expr() { e }
 
     rule block() -> Spanned<&'static mut [Spanned<Stmt>]> =
@@ -252,14 +255,14 @@ peg::parser! {
         spanned(<key("match") _ expr:expr() _ "{" _ arms:(match_arm() ** _) _ "}"
             { MatchBlock { expr, arms: a.add_array(arms) } }>)
 
-    rule type_name() -> TypeName =
-        key("u64") { TypeName::U64 } /
-        key("string") { TypeName::String } /
-        key("bool") { TypeName::Bool } /
-        key("Void") { TypeName::Tuple(&mut []) } /
-        id:ident() { TypeName::Ident(id) } /
-        "$" id:ident() { TypeName::PolymorphDecl(id) } /
-        "[" _ ty:type_decl_ref() _ "]" { TypeName::Slice(a.add(ty)) } /
+    rule type_name() -> AstTypeName =
+        key("u64") { AstTypeName::U64 } /
+        key("string") { AstTypeName::String } /
+        key("bool") { AstTypeName::Bool } /
+        key("Void") { AstTypeName::Tuple(&mut []) } /
+        id:ident() { AstTypeName::Ident(id) } /
+        "$" id:ident() { AstTypeName::PolymorphDecl(id) } /
+        "[" _ ty:type_decl_ref() _ "]" { AstTypeName::Slice(a.add(ty)) } /
         "{" _ decls:strict(<decl()>)* _ "}" {
             let mut len = 0;
             // let mut last = last.unwrap_or(Vec::new());
@@ -269,27 +272,27 @@ peg::parser! {
             for mut decl_list in decls { decl_out.append(&mut decl_list); }
             // decl_out.append(&mut last);
 
-            TypeName::Struct(a.add_array(decl_out))
+            AstTypeName::Struct(a.add_array(decl_out))
         } /
-        "(" _ tys:(type_decl_ref() ** comma()) _ ")" { TypeName::Tuple(a.add_array(tys)) }
+        "(" _ tys:(type_decl_ref() ** comma()) _ ")" { AstTypeName::Tuple(a.add_array(tys)) }
 
-    rule type_decl_ref() -> Spanned<Type> =
-        spanned(<ptr:("&"?) _ x:type_name() { Type { name: x, ptr: ptr.is_some() } }>)
+    rule type_decl_ref() -> Spanned<AstType> =
+        spanned(<ptr:("&"?) _ x:type_name() { AstType { name: x, ptr: ptr.is_some() } }>)
 
-    rule type_decl_enum() -> Vec<Spanned<Type>> = tys:(type_decl_ref() ++ (_ "|" _)) { tys }
+    rule type_decl_enum() -> Vec<Spanned<AstType>> = tys:(type_decl_ref() ++ (_ "|" _)) { tys }
 
-    rule type_decl() -> Spanned<Type> = tys:type_decl_enum() {?
+    rule type_decl() -> Spanned<AstType> = tys:type_decl_enum() {?
         let mut tys = tys;
         if tys.len() == 1 {
             Ok(tys.swap_remove(0))
         } else {
             let (begin, end) = (tys[0].begin, tys[tys.len() - 1].end);
-            fn has_complex_type(tys: &[Spanned<Type>]) -> bool {
+            fn has_complex_type(tys: &[Spanned<AstType>]) -> bool {
                 for ty in tys {
                     match &ty.inner.name {
-                        TypeName::Struct(_)
-                        | TypeName::Tuple(_) => return true,
-                        TypeName::Slice(ty) => return has_complex_type(slice::from_ref(ty)),
+                        AstTypeName::Struct(_)
+                        | AstTypeName::Tuple(_) => return true,
+                        AstTypeName::Slice(ty) => return has_complex_type(slice::from_ref(ty)),
                         _ => {}
                     }
                 }
@@ -301,8 +304,8 @@ peg::parser! {
                 Err("if you don't give your nested types a name, you won't be
                     able to refer to them")
             } else {
-                let name = TypeName::Enum(a.add_array(tys));
-                Ok(span(Type { name, ptr: false }, begin, end))
+                let name = AstTypeName::Enum(a.add_array(tys));
+                Ok(span(AstType { name, ptr: false }, begin, end))
             }
         }
     }
@@ -344,9 +347,10 @@ peg::parser! {
     }
 
     rule decl_eq_exprs() -> Vec<Spanned<Expr>> =
-        "=" _ exprs:(expr() ++ comma()) { exprs }
+        "=" _ exprs:(e:complex_expr() { vec![e] } /
+            exprs:(simple_expr() ++ comma()) { exprs }) { exprs }
 
-    rule decl_end() -> (Option<Vec<Spanned<Type>>>, Option<Vec<Spanned<Expr>>>) =
+    rule decl_end() -> (Option<Vec<Spanned<AstType>>>, Option<Vec<Spanned<Expr>>>) =
         exprs:decl_eq_exprs() { (None, Some(exprs)) } /
         tys:(type_decl() ++ comma()) _ exprs:decl_eq_exprs()? { (Some(tys), exprs) }
 
@@ -367,7 +371,7 @@ peg::parser! {
                 } else {
                     let iter = ids.into_iter().zip(exprs.into_iter());
                     let decls = iter.map(|(id, expr)| {
-                        let ty = Type { name: TypeName::InferType, ptr: false };
+                        let ty = AstType { name: AstTypeName::InferType, ptr: false };
                         let ty = span(ty, id.begin, id.end);
                         return Decl { id, ty, expr };
                     }).collect();
@@ -392,7 +396,7 @@ peg::parser! {
         }
     }
 
-    rule type_params() -> Vec<Spanned<Id>> =
+    rule type_params() -> Vec<Spanned<u32>> =
         "<" _ generics:(ident() ++ comma()) _ ">" { generics }
 
     rule stmt() -> Spanned<Stmt> =

@@ -30,8 +30,8 @@ pub enum Expr {
     Default,
     Int(u64),
     Str(&'static str),
-    Ident(Id),
-    Tuple(&'static mut [Spanned<Expr>]),
+    Ident(u32),
+    Tuple(&'static [Spanned<Expr>]),
     True,
     False,
     NoneValue,
@@ -39,24 +39,20 @@ pub enum Expr {
     // a[..] (accesses all elements)
     FullRange,
 
-    Bin(
-        BinOp,
-        &'static mut Spanned<Expr>,
-        &'static mut Spanned<Expr>,
-    ),
+    Bin(BinOp, &'static Spanned<Expr>, &'static Spanned<Expr>),
 
-    Not(&'static mut Spanned<Expr>),
-    Ref(&'static mut Spanned<Expr>),
-    Deref(&'static mut Spanned<Expr>),
+    Not(&'static Spanned<Expr>),
+    Ref(&'static Spanned<Expr>),
+    Deref(&'static Spanned<Expr>),
     Field {
-        base: &'static mut Spanned<Expr>,
-        field: Spanned<Id>,
+        base: &'static Spanned<Expr>,
+        field: Spanned<u32>,
     },
 
-    Block(&'static mut [Spanned<Stmt>]),
-    Match(&'static mut MatchBlock),
-    Branch(&'static mut BranchExpr),
-    Call(&'static mut Spanned<Expr>, &'static mut [Spanned<Expr>]),
+    Block(&'static [Spanned<Stmt>]),
+    Match(&'static MatchBlock),
+    Branch(&'static BranchExpr),
+    Call(&'static Spanned<Expr>, &'static [Spanned<Expr>]),
 }
 
 #[derive(Debug)]
@@ -70,8 +66,8 @@ pub struct BranchExpr {
 #[derive(Debug)]
 #[repr(C)]
 pub struct Decl {
-    pub id: Spanned<Id>,
-    pub ty: Spanned<Type>,
+    pub id: Spanned<u32>,
+    pub ty: Spanned<AstType>,
     pub expr: Spanned<Expr>,
 }
 
@@ -86,15 +82,15 @@ pub struct Destructure {
 #[repr(C, u8)]
 pub enum Stmt {
     Expr(Expr),
-    Decl(&'static mut [Decl]),
+    Decl(&'static [Decl]),
     Type {
-        id: Spanned<Id>,
-        def: Type,
-        params: &'static mut [Spanned<Id>],
+        id: Spanned<u32>,
+        def: AstType,
+        params: &'static [Spanned<u32>],
     },
-    Destructure(&'static mut Destructure),
+    Destructure(&'static Destructure),
     Import {
-        path: &'static mut [Spanned<Id>],
+        path: &'static [Spanned<u32>],
         all: bool,
     },
     Nop,
@@ -102,13 +98,13 @@ pub enum Stmt {
 
 #[derive(Debug)]
 #[repr(C, u8)]
-pub enum TypeName {
-    Struct(&'static mut [Decl]),
-    Tuple(&'static mut [Spanned<Type>]),
-    Enum(&'static mut [Spanned<Type>]),
-    Slice(&'static mut Spanned<Type>),
-    PolymorphDecl(Spanned<Id>),
-    Ident(Spanned<Id>),
+pub enum AstTypeName {
+    Struct(&'static [Decl]),
+    Tuple(&'static [Spanned<AstType>]),
+    Enum(&'static [Spanned<AstType>]),
+    Slice(&'static Spanned<AstType>),
+    PolymorphDecl(Spanned<u32>),
+    Ident(Spanned<u32>),
     U64,
     String,
     Bool,
@@ -117,17 +113,17 @@ pub enum TypeName {
 
 #[derive(Debug)]
 #[repr(C)]
-pub struct Type {
-    pub name: TypeName,
+pub struct AstType {
+    pub name: AstTypeName,
     pub ptr: bool,
 }
 
 #[derive(Debug)]
 #[repr(C, u8)]
 pub enum PatternStructDecl {
-    Name(Spanned<Id>),
+    Name(Spanned<u32>),
     Pattern {
-        id: Spanned<Id>,
+        id: Spanned<u32>,
         pat: Spanned<Pattern>,
     },
 }
@@ -135,10 +131,10 @@ pub enum PatternStructDecl {
 #[derive(Debug)]
 #[repr(C, u8)]
 pub enum PatternName {
-    Struct(&'static mut [PatternStructDecl]),
-    Tuple(&'static mut [Spanned<Pattern>]),
-    Enum(&'static mut [Spanned<Pattern>]),
-    Slice(&'static mut [Spanned<Pattern>]),
+    Struct(&'static [PatternStructDecl]),
+    Tuple(&'static [Spanned<Pattern>]),
+    Enum(&'static [Spanned<Pattern>]),
+    Slice(&'static [Spanned<Pattern>]),
     Expr(Spanned<Expr>),
     IgnoreValue,
 }
@@ -161,5 +157,5 @@ pub struct MatchArm {
 #[repr(C)]
 pub struct MatchBlock {
     pub expr: Spanned<Expr>,
-    pub arms: &'static mut [MatchArm],
+    pub arms: &'static [MatchArm],
 }

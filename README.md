@@ -14,10 +14,9 @@ All of these are todo.
 - Pattern matching from Rust
 - Simple type inference
 - Checked type casting from Java and Go
-- Meta-classes from Zig/Jai
-- Reflection from Java
 - "Any" type from Jai
 - Macros from Jai
+- Compile-time execution and metaprogramming from Jai
 - Structural Polymorphism from Jai
 - Defer from Jai
 - Light conditional compilation from Jai
