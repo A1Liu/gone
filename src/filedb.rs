@@ -3,7 +3,6 @@ use crate::util::*;
 use codespan_reporting::files::{Error, Files};
 use core::ops::Range;
 use core::{fmt, str};
-use std::collections::HashMap;
 
 /// The column index at the given byte index in the source file.
 /// This is the number of characters to the given byte index.
@@ -100,7 +99,7 @@ impl FileDb {
         Self {
             buckets: BucketListFactory::new(),
             files: Vec::new(),
-            names: HashMap::new(),
+            names: map(),
         }
     }
 

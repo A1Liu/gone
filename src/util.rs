@@ -5,7 +5,9 @@ use core::marker::PhantomData;
 use core::ptr::null_mut;
 use core::sync::atomic::{AtomicPtr, AtomicU64, Ordering};
 use lazy_static::lazy_static;
+use std::collections::hash_map::DefaultHasher;
 use std::fmt::Write;
+use std::hash::{BuildHasher, Hash, Hasher};
 use std::{fmt, str};
 
 #[derive(Debug, Clone, Copy)]
@@ -265,5 +267,27 @@ impl<'a, 'b, E> IntoIterator for &'a StackLL<'b, E> {
 
     fn into_iter(self) -> Self::IntoIter {
         StackLLIter { ll: Some(self) }
+    }
+}
+
+// This was way harder than it should've been to do.
+pub type HashMap<K, V> = std::collections::HashMap<K, V, DetState>;
+
+pub fn map<K, V>() -> HashMap<K, V> {
+    return HashMap::with_hasher(DetState);
+}
+pub struct DetState;
+
+impl DetState {
+    pub fn new() -> Self {
+        return Self;
+    }
+}
+
+impl BuildHasher for DetState {
+    type Hasher = DefaultHasher;
+
+    fn build_hasher(&self) -> DefaultHasher {
+        return DefaultHasher::new();
     }
 }

@@ -1,6 +1,5 @@
 use crate::buckets::*;
 use crate::util::*;
-use std::collections::HashMap;
 
 #[derive(Debug)]
 pub enum BinOp {

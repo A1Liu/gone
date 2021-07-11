@@ -4,7 +4,6 @@ use crate::util::*;
 use core::cell::RefCell;
 use core::slice;
 use lazy_static::lazy_static;
-use std::collections::HashMap;
 
 // TODO maybe this should be a handwritten recursive descent parser? It's definitely not worth the
 // work now, but it might be if this project ever goes into production.
@@ -22,7 +21,7 @@ pub const IT_SYMBOL: u32 = 1;
 impl Symbols {
     pub fn new(alloc: &impl Allocator<'static>) -> RefCell<Symbols> {
         let mut sym = Symbols {
-            table: HashMap::new(),
+            table: map(),
             translate: Vec::new(),
             next: 0,
         };
@@ -54,7 +53,7 @@ impl Symbols {
 
 lazy_static! {
     static ref KEYWORDS: HashMap<&'static str, ()> = {
-        let mut map = HashMap::new();
+        let mut map = map();
 
         map.insert("u64", ());
         map.insert("string", ());
@@ -261,7 +260,6 @@ peg::parser! {
         key("bool") { AstTypeName::Bool } /
         key("Void") { AstTypeName::NoneType } /
         id:ident() { AstTypeName::Ident(id) } /
-        "$" id:ident() { AstTypeName::PolymorphDecl(id) } /
         "[" _ ty:type_decl_ref() _ "]" { AstTypeName::Slice(a.add(ty)) } /
         b:block() { AstTypeName::Struct(b.inner) }
 

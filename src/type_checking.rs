@@ -2,7 +2,8 @@ use crate::ast::*;
 use crate::buckets::*;
 use crate::parser::*;
 use crate::util::*;
-use std::collections::HashMap;
+
+// Parallelization unit is file
 
 #[derive(Debug, Clone, Copy)]
 pub enum TypeKind {
@@ -60,7 +61,7 @@ impl GlobalTableBuilder {
 
         return GlobalTableBuilder {
             alloc,
-            dedup_names: HashMap::new(),
+            dedup_names: map(),
             table: GlobalTable {
                 types: vec![none_type, u64_type, string_type],
                 names: Vec::new(),
@@ -89,7 +90,7 @@ impl GlobalTableBuilder {
 
     pub fn block(&mut self, parent: &TyScope, sym: &Symbols, block: &mut Block) -> TypeKind {
         let mut names = Vec::new();
-        let mut ty_scope = parent.child(HashMap::new());
+        let mut ty_scope = parent.child(map());
 
         for stmt in &mut *block.stmts {
             match &mut stmt.inner {
