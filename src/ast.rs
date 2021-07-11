@@ -1,7 +1,8 @@
+use crate::buckets::*;
 use crate::util::*;
+use std::collections::HashMap;
 
 #[derive(Debug)]
-#[repr(u8)]
 pub enum BinOp {
     Add,
     Mult,
@@ -25,13 +26,11 @@ pub enum BinOp {
 }
 
 #[derive(Debug)]
-#[repr(C, u8)]
 pub enum Expr {
     Default,
     Int(u64),
     Str(&'static str),
     Ident(u32),
-    Tuple(&'static [Spanned<Expr>]),
     True,
     False,
     NoneValue,
@@ -39,24 +38,44 @@ pub enum Expr {
     // a[..] (accesses all elements)
     FullRange,
 
-    Bin(BinOp, &'static Spanned<Expr>, &'static Spanned<Expr>),
+    Bin(
+        BinOp,
+        &'static mut Spanned<Expr>,
+        &'static mut Spanned<Expr>,
+    ),
 
-    Not(&'static Spanned<Expr>),
-    Ref(&'static Spanned<Expr>),
-    Deref(&'static Spanned<Expr>),
+    Not(&'static mut Spanned<Expr>),
+    Ref(&'static mut Spanned<Expr>),
+    Deref(&'static mut Spanned<Expr>),
     Field {
-        base: &'static Spanned<Expr>,
+        base: &'static mut Spanned<Expr>,
         field: Spanned<u32>,
     },
 
-    Block(&'static [Spanned<Stmt>]),
-    Match(&'static MatchBlock),
-    Branch(&'static BranchExpr),
-    Call(&'static Spanned<Expr>, &'static [Spanned<Expr>]),
+    Block(Block),
+    Match(&'static mut MatchBlock),
+    Branch(&'static mut BranchExpr),
+    Call(&'static mut Spanned<Expr>, &'static mut [Spanned<Expr>]),
 }
 
 #[derive(Debug)]
-#[repr(C)]
+pub struct Block {
+    pub stmts: &'static mut [Spanned<Stmt>],
+    pub scope: &'static [StructField],
+    pub type_id: TypeId,
+}
+
+impl Block {
+    pub fn new(a: &impl Allocator<'static>, stmts: Vec<Spanned<Stmt>>) -> Self {
+        Block {
+            stmts: a.add_array(stmts),
+            scope: &[],
+            type_id: TypeId::new_none(),
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct BranchExpr {
     pub cond: Spanned<Expr>,
     pub if_true: Spanned<Expr>,
@@ -64,7 +83,6 @@ pub struct BranchExpr {
 }
 
 #[derive(Debug)]
-#[repr(C)]
 pub struct Decl {
     pub id: Spanned<u32>,
     pub ty: Spanned<AstType>,
@@ -72,54 +90,48 @@ pub struct Decl {
 }
 
 #[derive(Debug)]
-#[repr(C)]
 pub struct Destructure {
     pub pat: Spanned<Pattern>,
     pub expr: Spanned<Expr>,
 }
 
 #[derive(Debug)]
-#[repr(C, u8)]
 pub enum Stmt {
     Expr(Expr),
-    Decl(&'static [Decl]),
+    Decl(&'static mut [Decl]),
     Type {
         id: Spanned<u32>,
         def: AstType,
-        params: &'static [Spanned<u32>],
     },
-    Destructure(&'static Destructure),
+    Destructure(&'static mut Destructure),
     Import {
-        path: &'static [Spanned<u32>],
+        path: &'static mut [Spanned<u32>],
         all: bool,
     },
     Nop,
 }
 
 #[derive(Debug)]
-#[repr(C, u8)]
 pub enum AstTypeName {
-    Struct(&'static [Decl]),
-    Tuple(&'static [Spanned<AstType>]),
+    Struct(Block),
     Enum(&'static [Spanned<AstType>]),
     Slice(&'static Spanned<AstType>),
-    PolymorphDecl(Spanned<u32>),
     Ident(Spanned<u32>),
+    NoneType,
     U64,
     String,
     Bool,
     InferType,
+    Checked(TypeId),
 }
 
 #[derive(Debug)]
-#[repr(C)]
 pub struct AstType {
     pub name: AstTypeName,
     pub ptr: bool,
 }
 
 #[derive(Debug)]
-#[repr(C, u8)]
 pub enum PatternStructDecl {
     Name(Spanned<u32>),
     Pattern {
@@ -129,33 +141,91 @@ pub enum PatternStructDecl {
 }
 
 #[derive(Debug)]
-#[repr(C, u8)]
 pub enum PatternName {
-    Struct(&'static [PatternStructDecl]),
-    Tuple(&'static [Spanned<Pattern>]),
-    Enum(&'static [Spanned<Pattern>]),
-    Slice(&'static [Spanned<Pattern>]),
+    Struct(&'static mut [PatternStructDecl]),
+    Enum(&'static mut [Spanned<Pattern>]),
+    Slice(&'static mut [Spanned<Pattern>]),
     Expr(Spanned<Expr>),
     IgnoreValue,
 }
 
 #[derive(Debug)]
-#[repr(C)]
 pub struct Pattern {
     pub name: PatternName,
     pub ptr: bool,
 }
 
 #[derive(Debug)]
-#[repr(C)]
 pub struct MatchArm {
     pub pat: Spanned<Pattern>,
     pub expr: Spanned<Expr>,
 }
 
 #[derive(Debug)]
-#[repr(C)]
 pub struct MatchBlock {
     pub expr: Spanned<Expr>,
-    pub arms: &'static [MatchArm],
+    pub arms: &'static mut [MatchArm],
+}
+
+// TYPE CHECKING STUFF
+
+#[derive(Debug)]
+pub struct StructField {
+    pub field: Spanned<u32>,
+    pub ty: TypeId,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct TypeId(u32);
+
+impl TypeId {
+    const PTR_FLAG: u32 = 1 << 31;
+    const RESERVED: u32 = Self::PTR_FLAG;
+
+    pub fn new(id: u32, ptr: bool) -> Self {
+        assert!((Self::RESERVED & id) == 0, "id was too large {}", id);
+
+        let mut flags = 0;
+        if ptr {
+            flags |= Self::PTR_FLAG;
+        }
+
+        return Self(id | flags);
+    }
+
+    pub fn is_ptr(&self) -> bool {
+        return (Self::PTR_FLAG & self.0) != 0;
+    }
+
+    pub fn deref(self) -> Option<Self> {
+        if self.is_ptr() {
+            return Some(Self(self.idx()));
+        }
+
+        return None;
+    }
+
+    pub fn addr_of(self) -> Option<Self> {
+        if self.is_ptr() {
+            return None;
+        }
+
+        return Some(Self(self.0 | Self::PTR_FLAG));
+    }
+
+    pub fn idx(&self) -> u32 {
+        return self.0 & !Self::PTR_FLAG;
+    }
+
+    pub fn new_none() -> Self {
+        return Self(0);
+    }
+
+    pub fn new_u64() -> Self {
+        return Self(1);
+    }
+
+    pub fn new_string() -> Self {
+        return Self(2);
+    }
 }

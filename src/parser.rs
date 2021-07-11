@@ -12,6 +12,7 @@ use std::collections::HashMap;
 // TODO eventually this might wanna be a concurrent hashmap, IDK what i wanna do there tbh
 pub struct Symbols {
     pub table: HashMap<&'static str, u32>,
+    pub translate: Vec<&'static str>,
     pub next: u32,
 }
 
@@ -22,6 +23,7 @@ impl Symbols {
     pub fn new(alloc: &impl Allocator<'static>) -> RefCell<Symbols> {
         let mut sym = Symbols {
             table: HashMap::new(),
+            translate: Vec::new(),
             next: 0,
         };
 
@@ -36,13 +38,17 @@ impl Symbols {
             id
         } else {
             let id_str = alloc.add_str(id);
-            let id = self.next;
+            let id = self.translate.len() as u32;
             self.table.insert(id_str, id);
-            self.next += 1;
+            self.translate.push(id_str);
             id
         };
 
         return id;
+    }
+
+    pub fn translate(&self, idx: u32) -> &'static str {
+        return self.translate[idx as usize];
     }
 }
 
@@ -157,14 +163,7 @@ peg::parser! {
         span(&*a.add_str(&builder), begin, end)
     }
 
-    rule paren_expr() -> Spanned<Expr> =
-        b:position!() "(" _ es:(simple_expr() ** comma()) force:comma()? _ ")" e:position!() {
-            let mut es = es;
-            match es.len() {
-                1 if !force.is_some() => es.swap_remove(0),
-                _ => span(Expr::Tuple(a.add_array(es)), b, e),
-            }
-        }
+    rule paren_expr() -> Spanned<Expr> = "(" _ e:simple_expr() _ ")" { e }
 
     rule simple_expr() -> Spanned<Expr> = precedence! {
         x:(@) nbspace()? ".." nbspace()? y:@ { bin_op_span(a, BinOp::Range, x, y) }
@@ -238,13 +237,14 @@ peg::parser! {
         e:complex_expr() { e } /
         e:simple_expr() { e }
 
-    rule block() -> Spanned<&'static mut [Spanned<Stmt>]> =
+    rule block() -> Spanned<Block> =
         b:position!() "{" _ stmts:(stmt()*) _ expr:expr()? _ "}" e:position!() {
             let mut stmts = stmts;
             if let Some(expr) = expr {
                 stmts.push(span(Stmt::Expr(expr.inner), expr.begin, expr.end));
             }
-            span(a.add_array(stmts), b, e)
+
+            span(Block::new(a, stmts), b, e)
         }
 
     rule match_arm() -> MatchArm = pat:pattern() _ "=>" _ expr:expr() _ comma()? {
@@ -259,22 +259,11 @@ peg::parser! {
         key("u64") { AstTypeName::U64 } /
         key("string") { AstTypeName::String } /
         key("bool") { AstTypeName::Bool } /
-        key("Void") { AstTypeName::Tuple(&mut []) } /
+        key("Void") { AstTypeName::NoneType } /
         id:ident() { AstTypeName::Ident(id) } /
         "$" id:ident() { AstTypeName::PolymorphDecl(id) } /
         "[" _ ty:type_decl_ref() _ "]" { AstTypeName::Slice(a.add(ty)) } /
-        "{" _ decls:strict(<decl()>)* _ "}" {
-            let mut len = 0;
-            // let mut last = last.unwrap_or(Vec::new());
-            for decl_list in &decls { len += decl_list.len(); }
-            // len += last.len();
-            let mut decl_out = Vec::with_capacity(len);
-            for mut decl_list in decls { decl_out.append(&mut decl_list); }
-            // decl_out.append(&mut last);
-
-            AstTypeName::Struct(a.add_array(decl_out))
-        } /
-        "(" _ tys:(type_decl_ref() ** comma()) _ ")" { AstTypeName::Tuple(a.add_array(tys)) }
+        b:block() { AstTypeName::Struct(b.inner) }
 
     rule type_decl_ref() -> Spanned<AstType> =
         spanned(<ptr:("&"?) _ x:type_name() { AstType { name: x, ptr: ptr.is_some() } }>)
@@ -290,8 +279,7 @@ peg::parser! {
             fn has_complex_type(tys: &[Spanned<AstType>]) -> bool {
                 for ty in tys {
                     match &ty.inner.name {
-                        AstTypeName::Struct(_)
-                        | AstTypeName::Tuple(_) => return true,
+                        AstTypeName::Struct(_) => return true,
                         AstTypeName::Slice(ty) => return has_complex_type(slice::from_ref(ty)),
                         _ => {}
                     }
@@ -324,8 +312,7 @@ peg::parser! {
         expr:simple_expr() { PatternName::Expr(expr) } /
         "_" { PatternName::IgnoreValue } /
         "[" _ pats:(pattern() ** comma()) _ "]" { PatternName::Slice(a.add_array(pats)) } /
-        "{" _ pats:strict(<pattern_decl()>)*  _ "}" { PatternName::Struct(a.add_array(pats)) } /
-        "(" _ pats:(pattern() ** comma()) _ ")" { PatternName::Tuple(a.add_array(pats)) }
+        "{" _ pats:strict(<pattern_decl()>)*  _ "}" { PatternName::Struct(a.add_array(pats)) }
 
     rule pattern_ref() -> Spanned<Pattern> =
         b:position!() ptr:("&"?) _ name:pattern_name() e:position!() {
@@ -396,24 +383,20 @@ peg::parser! {
         }
     }
 
-    rule type_params() -> Vec<Spanned<u32>> =
-        "<" _ generics:(ident() ++ comma()) _ ">" { generics }
-
     rule stmt() -> Spanned<Stmt> =
         spanned(<semi() { Stmt::Nop }>) /
         spanned(<key("import") _ path:(ident() ++ (_ "." _)) all:(_ "." _ "*")? {
             Stmt::Import { path: a.add_array(path), all: all.is_some() } }>) /
         spanned(<strict(<d:decl() { Stmt::Decl(a.add_array(d)) }>)>) /
-        b:position!() key("type") _ id:ident() _ params:type_params()? _ def:type_decl() {
-            let params = params.map(|p| a.add_array(p)).unwrap_or(&mut []);
-            let ty = Stmt::Type{ id, def: def.inner, params };
+        b:position!() key("type") _ id:ident() _ def:type_decl() {
+            let ty = Stmt::Type{ id, def: def.inner };
             span(ty, b, def.end) } /
         b:position!() key("let") _ pat:pattern() _ "=" _ expr:expr() {
             let end = expr.end;
             span(Stmt::Destructure(a.add(Destructure { pat, expr })), b, end) } /
         e:expr() semantic_split() _ { span(Stmt::Expr(e.inner), e.begin, e.end) }
 
-    pub rule stmt_list() -> Vec<Spanned<Stmt>> = _ stmts:(stmt() ** _) _ { stmts }
+    pub rule stmt_list() -> Block = _ stmts:(stmt() ** _) _ { Block::new(a, stmts) }
   }
 
 }
